@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.image.*?>
+<?import javafx.geometry.*?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.crimdet.controller.DetectionHistoryController"
+      spacing="12" VBox.vgrow="ALWAYS">
+    <padding><Insets topRightBottomLeft="24"/></padding>
+
+    <!-- Header -->
+    <HBox alignment="CENTER_LEFT" spacing="12">
+        <Label text="Detection History" styleClass="title-2"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="  Export CSV" onAction="#onExportCsv" styleClass="accent">
+            <graphic><FontIcon iconLiteral="mdi2f-file-export" iconSize="16"/></graphic>
+        </Button>
+    </HBox>
+
+    <!-- Filter bar -->
+    <HBox alignment="CENTER_LEFT" spacing="12" styleClass="filter-bar">
+        <Label text="From:"/>
+        <DatePicker fx:id="fromDate" prefWidth="150"/>
+        <Label text="To:"/>
+        <DatePicker fx:id="toDate" prefWidth="150"/>
+        <Button text="Apply" onAction="#onApplyFilter">
+            <graphic><FontIcon iconLiteral="mdi2f-filter" iconSize="16"/></graphic>
+        </Button>
+    </HBox>
+
+    <!-- Empty state label -->
+    <Label fx:id="emptyLabel" text="No detections recorded yet. Matches appear here after scanning."
+           styleClass="text-muted" visible="false" managed="false"
+           wrapText="true" alignment="CENTER" maxWidth="Infinity">
+        <padding><Insets top="40"/></padding>
+    </Label>
+
+    <!-- Table -->
+    <TableView fx:id="historyTable" VBox.vgrow="ALWAYS">
+        <columns>
+            <TableColumn fx:id="screenshotCol" text="Screenshot" prefWidth="70" sortable="false"/>
+            <TableColumn fx:id="criminalCol" text="Criminal" prefWidth="200"/>
+            <TableColumn fx:id="confidenceCol" text="Confidence" prefWidth="120"/>
+            <TableColumn fx:id="detectedAtCol" text="Detected At" prefWidth="160"/>
+            <TableColumn fx:id="notesCol" text="Notes" prefWidth="250"/>
+        </columns>
+    </TableView>
+
+    <!-- Pagination -->
+    <HBox alignment="CENTER" spacing="12" styleClass="pagination-bar">
+        <Button fx:id="prevBtn" text="Prev" onAction="#onPrevPage">
+            <graphic><FontIcon iconLiteral="mdi2c-chevron-left" iconSize="16"/></graphic>
+        </Button>
+        <Label fx:id="pageLabel" text="Page 1 of 1"/>
+        <Button fx:id="nextBtn" text="Next" onAction="#onNextPage">
+            <graphic><FontIcon iconLiteral="mdi2c-chevron-right" iconSize="16"/></graphic>
+        </Button>
+    </HBox>
+</VBox>

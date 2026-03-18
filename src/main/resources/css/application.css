@@ -185,3 +185,14 @@
 .status-offline {
     -fx-background-color: -color-fg-muted;
 }
+
+/* Detection History */
+.filter-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-padding: 8 16;
+    -fx-background-radius: 6;
+}
+
+.pagination-bar {
+    -fx-padding: 8 0;
+}

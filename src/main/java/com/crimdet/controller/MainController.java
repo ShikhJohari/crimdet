@@ -72,6 +72,10 @@ public class MainController {
     @FXML
     public void showDetectionHistory() {
         loadScreen("detection-history");
+        Object ctrl = controllerCache.get("detection-history");
+        if (ctrl instanceof DetectionHistoryController dhc) {
+            dhc.refresh();
+        }
     }
 
     public void showCriminalDetail(Criminal criminal) {
@@ -115,6 +119,9 @@ public class MainController {
                 }
                 if (controller instanceof DashboardController dc) {
                     dc.setMainController(this);
+                }
+                if (controller instanceof DetectionHistoryController dhc) {
+                    dhc.setMainController(this);
                 }
             } catch (IOException e) {
                 log.error("Failed to load screen: {}", name, e);
