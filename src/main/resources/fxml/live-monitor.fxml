@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.image.*?>
+<?import javafx.scene.canvas.*?>
+<?import javafx.geometry.*?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="com.crimdet.controller.LiveMonitorController"
+            styleClass="content-area">
+
+    <!-- Top: Title and buttons -->
+    <top>
+        <VBox spacing="12">
+            <padding><Insets topRightBottomLeft="24"/></padding>
+            <Label text="Image Scanner" styleClass="title-2"/>
+            <HBox spacing="8" alignment="CENTER_LEFT">
+                <Button fx:id="uploadBtn" text="Upload Image" onAction="#onUpload"
+                        styleClass="accent"/>
+                <Button fx:id="scanBtn" text="Scan" onAction="#onScan" disable="true"/>
+                <Button fx:id="clearBtn" text="Clear" onAction="#onClear" disable="true"/>
+            </HBox>
+        </VBox>
+    </top>
+
+    <!-- Center: Image + Canvas overlay -->
+    <center>
+        <StackPane fx:id="imageContainer" style="-fx-padding: 0 24 0 24;">
+            <ImageView fx:id="imageView" preserveRatio="true" smooth="true"/>
+            <Canvas fx:id="overlayCanvas" mouseTransparent="true"/>
+            <!-- Empty state label -->
+            <Label fx:id="emptyImageLabel" text="Drop or upload an image to scan"
+                   styleClass="text-muted" style="-fx-font-size: 16px;"/>
+        </StackPane>
+    </center>
+
+    <!-- Right: Results panel -->
+    <right>
+        <VBox prefWidth="320" spacing="0"
+              style="-fx-border-color: -color-border-default; -fx-border-width: 0 0 0 1;">
+            <padding><Insets topRightBottomLeft="16"/></padding>
+            <Label text="Match Results" styleClass="title-4"
+                   style="-fx-padding: 0 0 12 0;"/>
+            <ScrollPane fitToWidth="true" VBox.vgrow="ALWAYS"
+                        style="-fx-background-color: transparent;">
+                <VBox fx:id="resultsBox" spacing="8"/>
+            </ScrollPane>
+        </VBox>
+    </right>
+
+    <!-- Bottom: Status bar -->
+    <bottom>
+        <HBox fx:id="statusBar" alignment="CENTER_LEFT" spacing="16"
+              styleClass="scan-status-bar">
+            <Label fx:id="statusLabel" text="Faces detected: 0 | Matches: 0"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <ProgressIndicator fx:id="progressIndicator" prefWidth="18" prefHeight="18"
+                               visible="false" managed="false"/>
+            <Label fx:id="progressLabel" text="" styleClass="text-muted"/>
+        </HBox>
+    </bottom>
+
+</BorderPane>

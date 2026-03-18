@@ -104,3 +104,84 @@
     -fx-text-fill: -color-danger-emphasis;
     -fx-icon-color: -color-danger-emphasis;
 }
+
+/* Live Monitor */
+.scan-status-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-padding: 8 16;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 1 0 0 0;
+}
+
+.match-card {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 6;
+    -fx-padding: 12;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 6;
+}
+
+.match-card:hover {
+    -fx-border-color: -color-accent-emphasis;
+}
+
+.confidence-bar {
+    -fx-background-color: -color-bg-default;
+    -fx-background-radius: 3;
+    -fx-pref-height: 8;
+}
+
+.confidence-fill {
+    -fx-background-radius: 3;
+    -fx-pref-height: 8;
+}
+
+/* Dashboard */
+.stat-card {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 8;
+    -fx-padding: 16;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.15), 4, 0, 0, 1);
+    -fx-min-width: 200;
+}
+
+.stat-card-danger {
+    -fx-border-color: -color-danger-emphasis;
+    -fx-border-width: 0 0 0 4;
+    -fx-border-radius: 8;
+}
+
+.stat-card-accent {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-border-width: 0 0 0 4;
+    -fx-border-radius: 8;
+}
+
+.stat-card-warning {
+    -fx-border-color: -color-warning-emphasis;
+    -fx-border-width: 0 0 0 4;
+    -fx-border-radius: 8;
+}
+
+.alert-entry {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 6;
+    -fx-padding: 12;
+    -fx-cursor: hand;
+}
+
+.alert-entry:hover {
+    -fx-background-color: -color-bg-default;
+}
+
+.status-dot {
+    -fx-background-radius: 50%;
+    -fx-min-width: 10;
+    -fx-min-height: 10;
+    -fx-max-width: 10;
+    -fx-max-height: 10;
+}
+
+.status-offline {
+    -fx-background-color: -color-fg-muted;
+}
