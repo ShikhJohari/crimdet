@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.geometry.*?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<ScrollPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="com.crimdet.controller.DashboardController"
+            fitToWidth="true" style="-fx-background-color: transparent;">
+    <VBox spacing="20" alignment="TOP_LEFT">
+        <padding><Insets topRightBottomLeft="24"/></padding>
+
+        <!-- Header -->
+        <Label text="Command Center" styleClass="title-2"/>
+
+        <!-- Stat Cards -->
+        <HBox spacing="16">
+            <VBox fx:id="statCardDanger" styleClass="stat-card,stat-card-danger" spacing="8">
+                <HBox spacing="8" alignment="CENTER_LEFT">
+                    <FontIcon iconLiteral="mdi2s-shield-alert" iconSize="24"
+                              style="-fx-icon-color: -color-danger-emphasis;"/>
+                    <Label text="Active Threats" styleClass="text-muted"/>
+                </HBox>
+                <Label fx:id="threatCount" text="0" styleClass="title-1"/>
+                <Label text="Wanted criminals" styleClass="text-muted"/>
+            </VBox>
+
+            <VBox fx:id="statCardAccent" styleClass="stat-card,stat-card-accent" spacing="8">
+                <HBox spacing="8" alignment="CENTER_LEFT">
+                    <FontIcon iconLiteral="mdi2d-database" iconSize="24"
+                              style="-fx-icon-color: -color-accent-emphasis;"/>
+                    <Label text="Database Size" styleClass="text-muted"/>
+                </HBox>
+                <Label fx:id="dbSizeCount" text="0" styleClass="title-1"/>
+                <Label text="Total records" styleClass="text-muted"/>
+            </VBox>
+
+            <VBox fx:id="statCardWarning" styleClass="stat-card,stat-card-warning" spacing="8">
+                <HBox spacing="8" alignment="CENTER_LEFT">
+                    <FontIcon iconLiteral="mdi2e-eye" iconSize="24"
+                              style="-fx-icon-color: -color-warning-emphasis;"/>
+                    <Label text="Today's Detections" styleClass="text-muted"/>
+                </HBox>
+                <Label fx:id="detectionCount" text="0" styleClass="title-1"/>
+                <Label text="Matches today" styleClass="text-muted"/>
+            </VBox>
+        </HBox>
+
+        <!-- Monitoring Status -->
+        <HBox spacing="8" alignment="CENTER_LEFT">
+            <Region styleClass="status-dot,status-offline"/>
+            <Label text="Surveillance: OFFLINE" styleClass="text-muted"/>
+        </HBox>
+
+        <!-- Quick Actions -->
+        <HBox spacing="12">
+            <Button onAction="#onRegisterSuspect" styleClass="accent">
+                <graphic><FontIcon iconLiteral="mdi2p-plus" iconSize="18"/></graphic>
+                <text>Register Suspect</text>
+            </Button>
+            <Button onAction="#onScanImage">
+                <graphic><FontIcon iconLiteral="mdi2c-camera" iconSize="18"/></graphic>
+                <text>Scan Image</text>
+            </Button>
+        </HBox>
+
+        <!-- Recent Alerts -->
+        <Label text="Recent Alerts" styleClass="title-3"/>
+
+        <Label fx:id="emptyAlertsLabel"
+               text="No detections yet. Scan an image to detect matches."
+               styleClass="text-muted"/>
+
+        <VBox fx:id="alertsContainer" spacing="8"/>
+    </VBox>
+</ScrollPane>

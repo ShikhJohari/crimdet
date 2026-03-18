@@ -48,6 +48,10 @@ public class MainController {
     @FXML
     public void showDashboard() {
         loadScreen("dashboard");
+        Object ctrl = controllerCache.get("dashboard");
+        if (ctrl instanceof DashboardController dc) {
+            dc.refresh();
+        }
     }
 
     @FXML
