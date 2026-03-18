@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.image.*?>
+<?import javafx.geometry.*?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<ScrollPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="com.crimdet.controller.CriminalFormController"
+            fitToWidth="true" fitToHeight="true">
+
+    <VBox spacing="16">
+        <padding><Insets topRightBottomLeft="24"/></padding>
+
+        <!-- Header -->
+        <HBox alignment="CENTER_LEFT" spacing="12">
+            <Button fx:id="backBtn" text="  Back" onAction="#onBack" styleClass="flat">
+                <graphic><FontIcon iconLiteral="mdi2a-arrow-left" iconSize="16"/></graphic>
+            </Button>
+            <Label fx:id="formTitle" text="Add Criminal" styleClass="title-2"/>
+        </HBox>
+
+        <!-- Form fields -->
+        <VBox spacing="12" styleClass="form-section" maxWidth="600">
+            <Label text="Name" styleClass="text-bold"/>
+            <TextField fx:id="nameField" promptText="Full name"/>
+
+            <Label text="Crime Type" styleClass="text-bold"/>
+            <TextField fx:id="crimeTypeField" promptText="e.g. Robbery, Assault"/>
+
+            <Label text="Description" styleClass="text-bold"/>
+            <TextArea fx:id="descriptionField" promptText="Additional details..." prefRowCount="3"/>
+
+            <Label text="Status" styleClass="text-bold"/>
+            <ComboBox fx:id="statusCombo" prefWidth="200"/>
+        </VBox>
+
+        <!-- Photos section -->
+        <VBox spacing="8" maxWidth="600">
+            <HBox alignment="CENTER_LEFT" spacing="12">
+                <Label text="Photos" styleClass="text-bold"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Button fx:id="uploadPhotoBtn" text="  Upload Photo" onAction="#onUploadPhoto">
+                    <graphic><FontIcon iconLiteral="mdi2u-upload" iconSize="16"/></graphic>
+                </Button>
+            </HBox>
+            <FlowPane fx:id="photoGrid" styleClass="photo-grid"/>
+            <Label fx:id="noPhotosLabel" text="No photos added yet." styleClass="text-muted"/>
+        </VBox>
+
+        <!-- Actions -->
+        <HBox spacing="12" maxWidth="600">
+            <Button fx:id="saveBtn" text="Save" onAction="#onSave" styleClass="accent"/>
+            <Button fx:id="cancelBtn" text="Cancel" onAction="#onBack"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button fx:id="deleteBtn" text="Delete" onAction="#onDelete" styleClass="danger"
+                    visible="false" managed="false"/>
+        </HBox>
+
+    </VBox>
+</ScrollPane>

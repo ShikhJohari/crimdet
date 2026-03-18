@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.geometry.*?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="com.crimdet.controller.CriminalListController"
+      spacing="12" VBox.vgrow="ALWAYS">
+    <padding><Insets topRightBottomLeft="24"/></padding>
+
+    <!-- Header -->
+    <HBox alignment="CENTER_LEFT" spacing="12">
+        <Label text="Criminal Records" styleClass="title-2"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <TextField fx:id="searchField" promptText="Search by name..." prefWidth="250"/>
+        <ComboBox fx:id="statusFilter" promptText="All Statuses" prefWidth="150"/>
+        <Button fx:id="addBtn" text="  Add Criminal" onAction="#onAdd" styleClass="accent">
+            <graphic><FontIcon iconLiteral="mdi2p-plus" iconSize="16"/></graphic>
+        </Button>
+    </HBox>
+
+    <!-- Table -->
+    <TableView fx:id="criminalTable" VBox.vgrow="ALWAYS">
+        <columns>
+            <TableColumn fx:id="idCol" text="ID" prefWidth="60"/>
+            <TableColumn fx:id="nameCol" text="Name" prefWidth="200"/>
+            <TableColumn fx:id="crimeTypeCol" text="Crime Type" prefWidth="180"/>
+            <TableColumn fx:id="statusCol" text="Status" prefWidth="120"/>
+            <TableColumn fx:id="createdCol" text="Created" prefWidth="160"/>
+            <TableColumn fx:id="actionsCol" text="Actions" prefWidth="120"/>
+        </columns>
+    </TableView>
+</VBox>

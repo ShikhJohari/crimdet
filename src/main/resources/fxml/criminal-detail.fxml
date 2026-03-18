@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.geometry.*?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<ScrollPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="com.crimdet.controller.CriminalDetailController"
+            fitToWidth="true" fitToHeight="true">
+
+    <VBox spacing="16">
+        <padding><Insets topRightBottomLeft="24"/></padding>
+
+        <!-- Header -->
+        <HBox alignment="CENTER_LEFT" spacing="12">
+            <Button fx:id="backBtn" text="  Back" onAction="#onBack" styleClass="flat">
+                <graphic><FontIcon iconLiteral="mdi2a-arrow-left" iconSize="16"/></graphic>
+            </Button>
+            <Label fx:id="nameLabel" styleClass="title-2"/>
+            <Label fx:id="statusBadge" styleClass="text-bold"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button fx:id="editBtn" text="  Edit" onAction="#onEdit" styleClass="accent">
+                <graphic><FontIcon iconLiteral="mdi2p-pencil" iconSize="16"/></graphic>
+            </Button>
+        </HBox>
+
+        <!-- Info card -->
+        <VBox spacing="8" styleClass="card" maxWidth="700">
+            <HBox spacing="8">
+                <Label text="Crime Type:" styleClass="text-bold"/>
+                <Label fx:id="crimeTypeLabel"/>
+            </HBox>
+            <HBox spacing="8">
+                <Label text="Description:" styleClass="text-bold"/>
+                <Label fx:id="descriptionLabel" wrapText="true"/>
+            </HBox>
+            <HBox spacing="16">
+                <HBox spacing="8">
+                    <Label text="Added:" styleClass="text-muted"/>
+                    <Label fx:id="createdLabel" styleClass="text-muted"/>
+                </HBox>
+                <HBox spacing="8">
+                    <Label text="Updated:" styleClass="text-muted"/>
+                    <Label fx:id="updatedLabel" styleClass="text-muted"/>
+                </HBox>
+            </HBox>
+        </VBox>
+
+        <!-- Photos -->
+        <VBox spacing="8" maxWidth="700">
+            <Label text="Enrolled Photos" styleClass="title-3"/>
+            <FlowPane fx:id="photoGrid" styleClass="photo-grid"/>
+            <Label fx:id="noPhotosLabel" text="No photos enrolled." styleClass="text-muted"/>
+        </VBox>
+
+        <!-- Detection history for this criminal -->
+        <VBox spacing="8" maxWidth="700" VBox.vgrow="ALWAYS">
+            <Label text="Detection History" styleClass="title-3"/>
+            <TableView fx:id="detectionTable" prefHeight="200">
+                <columns>
+                    <TableColumn fx:id="confidenceCol" text="Confidence" prefWidth="100"/>
+                    <TableColumn fx:id="detectedAtCol" text="Detected At" prefWidth="180"/>
+                    <TableColumn fx:id="notesCol" text="Notes" prefWidth="300"/>
+                </columns>
+            </TableView>
+            <Label fx:id="noDetectionsLabel" text="No detections recorded for this criminal." styleClass="text-muted"/>
+        </VBox>
+
+    </VBox>
+</ScrollPane>

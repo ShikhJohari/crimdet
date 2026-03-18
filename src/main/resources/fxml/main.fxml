@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.geometry.*?>
+<?import org.kordamp.ikonli.javafx.FontIcon?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="com.crimdet.controller.MainController"
+            prefWidth="1200" prefHeight="800">
+
+    <left>
+        <VBox fx:id="sidebar" styleClass="sidebar" spacing="4" alignment="TOP_LEFT" prefWidth="220">
+            <padding><Insets top="16" right="8" bottom="16" left="8"/></padding>
+
+            <Label text="CrimDet" styleClass="sidebar-title"/>
+            <Separator/>
+
+            <ToggleButton fx:id="dashboardBtn" text="  Dashboard" onAction="#showDashboard"
+                          maxWidth="Infinity" styleClass="sidebar-btn" alignment="CENTER_LEFT">
+                <graphic><FontIcon iconLiteral="mdi2v-view-dashboard" iconSize="20"/></graphic>
+            </ToggleButton>
+
+            <ToggleButton fx:id="liveMonitorBtn" text="  Live Monitor" onAction="#showLiveMonitor"
+                          maxWidth="Infinity" styleClass="sidebar-btn" alignment="CENTER_LEFT">
+                <graphic><FontIcon iconLiteral="mdi2c-camera" iconSize="20"/></graphic>
+            </ToggleButton>
+
+            <ToggleButton fx:id="criminalListBtn" text="  Criminal Records" onAction="#showCriminalList"
+                          maxWidth="Infinity" styleClass="sidebar-btn" alignment="CENTER_LEFT">
+                <graphic><FontIcon iconLiteral="mdi2a-account-group" iconSize="20"/></graphic>
+            </ToggleButton>
+
+            <ToggleButton fx:id="detectionHistoryBtn" text="  Detection History" onAction="#showDetectionHistory"
+                          maxWidth="Infinity" styleClass="sidebar-btn" alignment="CENTER_LEFT">
+                <graphic><FontIcon iconLiteral="mdi2h-history" iconSize="20"/></graphic>
+            </ToggleButton>
+
+            <Region VBox.vgrow="ALWAYS"/>
+        </VBox>
+    </left>
+
+    <center>
+        <StackPane fx:id="contentArea" styleClass="content-area"/>
+    </center>
+
+</BorderPane>
