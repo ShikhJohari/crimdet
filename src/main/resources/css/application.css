@@ -1,0 +1,106 @@
+/* Sidebar */
+.sidebar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: -color-border-default;
+    -fx-border-width: 0 1 0 0;
+}
+
+.sidebar-title {
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+    -fx-padding: 8 0 8 8;
+}
+
+.sidebar-btn {
+    -fx-background-color: transparent;
+    -fx-background-radius: 6;
+    -fx-padding: 10 12;
+    -fx-font-size: 14px;
+    -fx-cursor: hand;
+}
+
+.sidebar-btn:hover {
+    -fx-background-color: -color-bg-default;
+}
+
+.sidebar-btn:selected {
+    -fx-background-color: -color-accent-subtle;
+    -fx-text-fill: -color-accent-fg;
+}
+
+.sidebar-btn:selected .ikonli-font-icon {
+    -fx-icon-color: -color-accent-fg;
+}
+
+/* Content area */
+.content-area {
+    -fx-background-color: -color-bg-default;
+}
+
+/* Card style */
+.card {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 8;
+    -fx-padding: 16;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.15), 4, 0, 0, 1);
+}
+
+/* Criminal list */
+.search-bar {
+    -fx-padding: 0 0 8 0;
+}
+
+/* Criminal form */
+.form-section {
+    -fx-spacing: 12;
+}
+
+.photo-grid {
+    -fx-hgap: 8;
+    -fx-vgap: 8;
+    -fx-padding: 8;
+}
+
+.photo-tile {
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 6;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 6;
+    -fx-padding: 4;
+    -fx-cursor: hand;
+}
+
+.photo-tile:hover {
+    -fx-border-color: -color-accent-emphasis;
+}
+
+/* Table tweaks */
+.table-view .column-header {
+    -fx-font-weight: bold;
+}
+
+/* Status badges */
+.status-wanted {
+    -fx-text-fill: -color-danger-fg;
+    -fx-font-weight: bold;
+}
+
+.status-arrested {
+    -fx-text-fill: -color-warning-fg;
+    -fx-font-weight: bold;
+}
+
+.status-released {
+    -fx-text-fill: -color-success-fg;
+    -fx-font-weight: bold;
+}
+
+/* Face validation overlay */
+.face-valid {
+    -fx-text-fill: -color-success-emphasis;
+    -fx-icon-color: -color-success-emphasis;
+}
+.face-invalid {
+    -fx-text-fill: -color-danger-emphasis;
+    -fx-icon-color: -color-danger-emphasis;
+}
