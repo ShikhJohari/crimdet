@@ -24,7 +24,7 @@ javafx {
 val atlantafxVersion = "2.0.1"
 val ikonliVersion = "12.3.1"
 val djlVersion = "0.31.1"
-val javacvVersion = "1.5.11"
+val javacvVersion = "1.5.10"
 val h2Version = "2.3.232"
 val jdbiVersion = "3.47.0"
 val hikariVersion = "6.2.1"

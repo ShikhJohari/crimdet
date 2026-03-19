@@ -1,20 +1,71 @@
-# Gradle
-.gradle/
+# ===== Build =====
 build/
+out/
+bin/
+target/
+.gradle/
 
-# IDE
+# ===== IDE =====
+# IntelliJ IDEA
 .idea/
 *.iml
-.vscode/
+*.ipr
+*.iws
+
+# Eclipse
 .settings/
 .project
 .classpath
-*.swp
+.factorypath
 
-# OS
+# VS Code
+.vscode/
+
+# NetBeans
+nb-private/
+nbproject/private/
+
+# ===== Java =====
+*.class
+hs_err_pid*
+replay_pid*
+
+# ===== Gradle wrapper (keep gradle-wrapper.jar tracked) =====
+# Some teams gitignore the wrapper jar; we keep it so `./gradlew` works without pre-installed Gradle
+
+# ===== Runtime / Data =====
+# H2 embedded database — recreated on app launch from schema.sql
+data/*.db
+data/*.lock.db
+data/*.trace.db
+
+# DJL / PyTorch model cache
+djl-cache/
+model/
+*.pt
+*.onnx
+
+# JavaCPP / OpenCV native cache
+javacpp/
+
+# Application logs
+*.log
+logs/
+
+# ===== OS =====
 .DS_Store
 Thumbs.db
+Desktop.ini
+ehthumbs.db
+*~
+*.swp
+*.swo
 
-# Runtime
-*.log
-hs_err_pid*
+# ===== Secrets / Environment =====
+.env
+.env.*
+*.pem
+*.key
+*.keystore
+*.jks
+credentials.*

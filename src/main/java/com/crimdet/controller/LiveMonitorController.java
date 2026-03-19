@@ -182,10 +182,10 @@ public class LiveMonitorController {
                     updateStatus(faceCount, finalMatchCount);
                     setScanning(false);
                 });
-            } catch (Exception e) {
-                log.error("Scan failed", e);
+            } catch (Throwable t) {
+                log.error("Scan failed", t);
                 Platform.runLater(() -> {
-                    progressLabel.setText("Scan failed");
+                    progressLabel.setText("Scan failed: " + t.getMessage());
                     setScanning(false);
                 });
             }

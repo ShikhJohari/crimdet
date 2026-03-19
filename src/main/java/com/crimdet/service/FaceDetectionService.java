@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.awt.image.BufferedImage;
-import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,6 +26,7 @@ public class FaceDetectionService {
     private static final Logger log = LoggerFactory.getLogger(FaceDetectionService.class);
 
     private static FaceDetectionService instance;
+    private static RuntimeException initError;
     private final CascadeClassifier classifier;
 
     private FaceDetectionService() {
@@ -45,19 +45,27 @@ public class FaceDetectionService {
                 throw new RuntimeException("Failed to load cascade classifier");
             }
             log.info("Face detection classifier loaded");
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to initialize face detection", e);
+        } catch (Throwable e) {
+            throw new RuntimeException("Failed to initialize face detection: " + e.getMessage(), e);
         }
     }
 
     public static synchronized FaceDetectionService getInstance() {
+        if (initError != null) {
+            throw initError;
+        }
         if (instance == null) {
-            instance = new FaceDetectionService();
+            try {
+                instance = new FaceDetectionService();
+            } catch (RuntimeException e) {
+                initError = e;
+                throw e;
+            }
         }
         return instance;
     }
 
-    public List<DetectedFace> detectFaces(BufferedImage image) {
+    public synchronized List<DetectedFace> detectFaces(BufferedImage image) {
         List<DetectedFace> results = new ArrayList<>();
 
         Java2DFrameConverter java2dConverter = new Java2DFrameConverter();

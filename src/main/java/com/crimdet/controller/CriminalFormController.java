@@ -139,8 +139,8 @@ public class CriminalFormController {
                     faceValidation.put(photoData, valid);
                     refreshPhotoGrid();
                 });
-            } catch (IOException e) {
-                log.error("Face detection failed", e);
+            } catch (Throwable t) {
+                log.error("Face detection failed", t);
                 Platform.runLater(() -> {
                     faceValidation.put(photoData, false);
                     refreshPhotoGrid();
@@ -214,8 +214,8 @@ public class CriminalFormController {
                 matchingService.refreshCache();
 
                 log.info("Embedding enrollment complete for criminal id={}", criminalId);
-            } catch (Exception e) {
-                log.error("Embedding enrollment failed for criminal id={}", criminalId, e);
+            } catch (Throwable t) {
+                log.error("Embedding enrollment failed for criminal id={}", criminalId, t);
             } finally {
                 Platform.runLater(() -> {
                     saveBtn.setDisable(false);
