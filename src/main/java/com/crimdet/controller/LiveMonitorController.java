@@ -56,11 +56,19 @@ public class LiveMonitorController {
     private BufferedImage currentImage;
     private byte[] currentImageBytes;
 
-    private final CriminalService criminalService = new CriminalService();
-    private final FaceEmbeddingService embeddingService = new FaceEmbeddingService();
-    private final FaceMatchingService matchingService = new FaceMatchingService();
-    private final DetectionLogRepository detectionLogRepo =
-            new DetectionLogRepository(DatabaseConfig.getInstance().getJdbi());
+    private CriminalService criminalService;
+    private FaceEmbeddingService embeddingService;
+    private FaceMatchingService matchingService;
+    private DetectionLogRepository detectionLogRepo;
+
+    private void ensureServicesInitialized() {
+        if (criminalService == null) {
+            criminalService = new CriminalService();
+            embeddingService = new FaceEmbeddingService();
+            matchingService = new FaceMatchingService();
+            detectionLogRepo = new DetectionLogRepository(DatabaseConfig.getInstance().getJdbi());
+        }
+    }
 
     // Store scan results for overlay drawing
     private List<FaceResult> lastResults = new ArrayList<>();
@@ -127,6 +135,7 @@ public class LiveMonitorController {
         if (currentImage == null) return;
 
         setScanning(true);
+        ensureServicesInitialized();
 
         Thread scanThread = new Thread(() -> {
             try {

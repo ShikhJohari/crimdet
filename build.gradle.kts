@@ -89,6 +89,8 @@ val addOpensFlags = listOf(
     "--add-exports", "javafx.controls/com.sun.javafx.scene.control.behavior=ALL-UNNAMED",
     "--add-exports", "javafx.controls/com.sun.javafx.scene.control.inputmap=ALL-UNNAMED",
     "--add-exports", "javafx.controls/com.sun.javafx.scene.control=ALL-UNNAMED",
+    // Java 22+: allow JavaCPP/OpenCV native library loading
+    "--enable-native-access=ALL-UNNAMED",
 )
 
 tasks.withType<JavaExec> {
