@@ -19,6 +19,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.Cursor;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
@@ -72,6 +73,8 @@ public class LiveMonitorController {
 
     // Store scan results for overlay drawing
     private List<FaceResult> lastResults = new ArrayList<>();
+    private volatile Thread activeScanThread;
+    private boolean drawScheduled = false;
 
     public void setMainController(MainController mainController) {
         this.mainController = mainController;
@@ -83,11 +86,22 @@ public class LiveMonitorController {
         imageView.fitWidthProperty().bind(imageContainer.widthProperty().subtract(48));
         imageView.fitHeightProperty().bind(imageContainer.heightProperty().subtract(48));
 
-        // Redraw overlay when container resizes
-        imageContainer.widthProperty().addListener((obs, o, n) -> drawOverlay());
-        imageContainer.heightProperty().addListener((obs, o, n) -> drawOverlay());
+        // Redraw overlay when container resizes (debounced)
+        overlayCanvas.setManaged(false);
+        imageContainer.widthProperty().addListener((obs, o, n) -> scheduleDrawOverlay());
+        imageContainer.heightProperty().addListener((obs, o, n) -> scheduleDrawOverlay());
 
         showEmptyState();
+    }
+
+    private void scheduleDrawOverlay() {
+        if (!drawScheduled) {
+            drawScheduled = true;
+            Platform.runLater(() -> {
+                drawScheduled = false;
+                drawOverlay();
+            });
+        }
     }
 
     @FXML
@@ -134,24 +148,34 @@ public class LiveMonitorController {
     public void onScan() {
         if (currentImage == null) return;
 
+        // Cancel any running scan
+        if (activeScanThread != null && activeScanThread.isAlive()) {
+            activeScanThread.interrupt();
+        }
+
         setScanning(true);
         ensureServicesInitialized();
 
-        Thread scanThread = new Thread(() -> {
-            try {
-                // Refresh match cache
-                matchingService.refreshCache();
+        // Capture refs for thread safety
+        final BufferedImage imageToScan = currentImage;
 
-                // Detect faces
-                List<DetectedFace> faces = FaceDetectionService.getInstance().detectFaces(currentImage);
+        Thread thread = new Thread(() -> {
+            try {
+                matchingService.refreshCache();
+                if (Thread.interrupted()) return;
+
+                List<DetectedFace> faces = FaceDetectionService.getInstance().detectFaces(imageToScan);
+                if (Thread.interrupted()) return;
+
                 List<FaceResult> results = new ArrayList<>();
                 int matchCount = 0;
 
                 for (DetectedFace face : faces) {
-                    // Extract embedding
-                    float[] embedding = embeddingService.extractEmbedding(face.getCroppedFace());
+                    if (Thread.interrupted()) return;
 
-                    // Find matches
+                    float[] embedding = embeddingService.extractEmbedding(face.getCroppedFace());
+                    if (Thread.interrupted()) return;
+
                     List<MatchResult> matches = matchingService.findMatches(embedding);
 
                     if (!matches.isEmpty()) {
@@ -159,7 +183,6 @@ public class LiveMonitorController {
                         results.add(new FaceResult(face, best));
                         matchCount++;
 
-                        // Log to DB
                         DetectionLog dl = new DetectionLog();
                         dl.setCriminalId(best.getCriminalId());
                         dl.setConfidence(best.getConfidence());
@@ -180,22 +203,28 @@ public class LiveMonitorController {
                     drawOverlay();
                     buildResultCards(finalResults);
                     updateStatus(faceCount, finalMatchCount);
-                    setScanning(false);
                 });
             } catch (Throwable t) {
-                log.error("Scan failed", t);
-                Platform.runLater(() -> {
-                    progressLabel.setText("Scan failed: " + t.getMessage());
-                    setScanning(false);
-                });
+                if (!(t instanceof InterruptedException)) {
+                    log.error("Scan failed", t);
+                    Platform.runLater(() -> progressLabel.setText("Scan failed: " + t.getMessage()));
+                }
+            } finally {
+                Platform.runLater(() -> setScanning(false));
             }
         });
-        scanThread.setDaemon(true);
-        scanThread.start();
+        thread.setDaemon(true);
+        activeScanThread = thread;
+        thread.start();
     }
 
     @FXML
     public void onClear() {
+        // Cancel any running scan
+        if (activeScanThread != null && activeScanThread.isAlive()) {
+            activeScanThread.interrupt();
+        }
+
         currentImage = null;
         currentImageBytes = null;
         imageView.setImage(null);
@@ -385,7 +414,7 @@ public class LiveMonitorController {
         card.getChildren().addAll(topRow, confBox);
 
         // Click to navigate to criminal detail
-        card.setStyle(card.getStyle() + "-fx-cursor: hand;");
+        card.setCursor(Cursor.HAND);
         card.setOnMouseClicked(e -> {
             if (mainController != null) {
                 criminalService.findById(match.getCriminalId()).ifPresent(c ->
@@ -421,6 +450,7 @@ public class LiveMonitorController {
         progressLabel.setText(scanning ? "Scanning..." : "");
         uploadBtn.setDisable(scanning);
         scanBtn.setDisable(scanning);
+        clearBtn.setDisable(scanning);
     }
 
     private static String toHex(Color c) {
