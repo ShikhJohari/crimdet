@@ -55,15 +55,13 @@ public class FaceEmbeddingService {
     }
 
     private FaceRecognizerSF loadFaceRecognizer() {
-        try {
-            InputStream is = getClass().getResourceAsStream("/models/face_recognition_sface_2021dec_int8.onnx");
+        try (InputStream is = getClass().getResourceAsStream("/models/face_recognition_sface_2021dec_int8.onnx")) {
             if (is == null) {
                 throw new RuntimeException("SFace ONNX model not found in resources");
             }
             Path tempFile = Files.createTempFile("sface_model", ".onnx");
             tempFile.toFile().deleteOnExit();
             Files.copy(is, tempFile, StandardCopyOption.REPLACE_EXISTING);
-            is.close();
 
             FaceRecognizerSF recognizer = FaceRecognizerSF.create(tempFile.toString(), "");
             log.info("SFace face recognition model loaded");
@@ -73,7 +71,7 @@ public class FaceEmbeddingService {
         }
     }
 
-    public float[] extractEmbedding(BufferedImage faceImage) {
+    public synchronized float[] extractEmbedding(BufferedImage faceImage) {
         Java2DFrameConverter java2dConverter = new Java2DFrameConverter();
         OpenCVFrameConverter.ToMat matConverter = new OpenCVFrameConverter.ToMat();
         Mat mat = matConverter.convert(java2dConverter.convert(faceImage));
@@ -97,13 +95,14 @@ public class FaceEmbeddingService {
                 bgr = mat;
             }
 
-            // SFace handles resize to 112x112 and normalization internally
+            // SFace handles resize to 112x112 internally; output is already L2-normalized
             faceRecognizer.feature(bgr, embedding);
 
             // Extract float[] from 1x128 output Mat
             FloatPointer fp = new FloatPointer(embedding.ptr());
             float[] result = new float[EMBED_LENGTH];
             fp.get(result);
+            fp.close();
             return result;
         } finally {
             embedding.close();
