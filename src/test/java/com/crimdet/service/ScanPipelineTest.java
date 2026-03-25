@@ -106,7 +106,7 @@ class ScanPipelineTest {
         float[] embedding2 = embeddingService.extractEmbedding(img);
 
         assertNotNull(embedding1);
-        assertEquals(64 * 64, embedding1.length);
+        assertEquals(128, embedding1.length);
 
         // Same image should produce identical embeddings
         float sim = EmbeddingUtils.cosineSimilarity(embedding1, embedding2);

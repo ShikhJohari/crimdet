@@ -7,32 +7,42 @@ import com.crimdet.model.FaceEmbedding;
 import com.crimdet.repository.CriminalPhotoRepository;
 import com.crimdet.repository.FaceEmbeddingRepository;
 import com.crimdet.util.EmbeddingUtils;
+import org.bytedeco.javacpp.FloatPointer;
+import org.bytedeco.javacv.Java2DFrameConverter;
+import org.bytedeco.javacv.OpenCVFrameConverter;
+import org.bytedeco.opencv.opencv_core.Mat;
+import org.bytedeco.opencv.opencv_objdetect.FaceRecognizerSF;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
+
+import static org.bytedeco.opencv.global.opencv_imgproc.*;
 
 public class FaceEmbeddingService {
 
     private static final Logger log = LoggerFactory.getLogger(FaceEmbeddingService.class);
-    private static final int EMBED_SIZE = 64;
-    private static final int EMBED_LENGTH = EMBED_SIZE * EMBED_SIZE; // 4096
+    private static final int EMBED_LENGTH = 128;
 
     private final FaceDetectionService faceDetectionService;
     private final FaceEmbeddingRepository embeddingRepo;
     private final CriminalPhotoRepository photoRepo;
+    private final FaceRecognizerSF faceRecognizer;
 
     public FaceEmbeddingService() {
         var jdbi = DatabaseConfig.getInstance().getJdbi();
         this.faceDetectionService = FaceDetectionService.getInstance();
         this.embeddingRepo = new FaceEmbeddingRepository(jdbi);
         this.photoRepo = new CriminalPhotoRepository(jdbi);
+        this.faceRecognizer = loadFaceRecognizer();
     }
 
     public FaceEmbeddingService(FaceDetectionService faceDetectionService,
@@ -41,38 +51,65 @@ public class FaceEmbeddingService {
         this.faceDetectionService = faceDetectionService;
         this.embeddingRepo = embeddingRepo;
         this.photoRepo = photoRepo;
+        this.faceRecognizer = loadFaceRecognizer();
+    }
+
+    private FaceRecognizerSF loadFaceRecognizer() {
+        try {
+            InputStream is = getClass().getResourceAsStream("/models/face_recognition_sface_2021dec_int8.onnx");
+            if (is == null) {
+                throw new RuntimeException("SFace ONNX model not found in resources");
+            }
+            Path tempFile = Files.createTempFile("sface_model", ".onnx");
+            tempFile.toFile().deleteOnExit();
+            Files.copy(is, tempFile, StandardCopyOption.REPLACE_EXISTING);
+            is.close();
+
+            FaceRecognizerSF recognizer = FaceRecognizerSF.create(tempFile.toString(), "");
+            log.info("SFace face recognition model loaded");
+            return recognizer;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load SFace model: " + e.getMessage(), e);
+        }
     }
 
     public float[] extractEmbedding(BufferedImage faceImage) {
-        // Resize to 64x64 grayscale
-        BufferedImage gray = new BufferedImage(EMBED_SIZE, EMBED_SIZE, BufferedImage.TYPE_BYTE_GRAY);
-        Graphics2D g = gray.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g.drawImage(faceImage, 0, 0, EMBED_SIZE, EMBED_SIZE, null);
-        g.dispose();
+        Java2DFrameConverter java2dConverter = new Java2DFrameConverter();
+        OpenCVFrameConverter.ToMat matConverter = new OpenCVFrameConverter.ToMat();
+        Mat mat = matConverter.convert(java2dConverter.convert(faceImage));
 
-        // Extract pixels and normalize to [0, 1]
-        float[] embedding = new float[EMBED_LENGTH];
-        for (int y = 0; y < EMBED_SIZE; y++) {
-            for (int x = 0; x < EMBED_SIZE; x++) {
-                int pixel = gray.getRaster().getSample(x, y, 0);
-                embedding[y * EMBED_SIZE + x] = pixel / 255.0f;
+        if (mat == null || mat.empty()) {
+            log.warn("Failed to convert face image to Mat");
+            return new float[EMBED_LENGTH];
+        }
+
+        Mat bgr = null;
+        Mat embedding = new Mat();
+        try {
+            // Ensure 3-channel BGR
+            if (mat.channels() == 4) {
+                bgr = new Mat();
+                cvtColor(mat, bgr, COLOR_BGRA2BGR);
+            } else if (mat.channels() == 1) {
+                bgr = new Mat();
+                cvtColor(mat, bgr, COLOR_GRAY2BGR);
+            } else {
+                bgr = mat;
             }
-        }
 
-        // L2-normalize
-        float norm = 0f;
-        for (float v : embedding) {
-            norm += v * v;
-        }
-        norm = (float) Math.sqrt(norm);
-        if (norm > 0f) {
-            for (int i = 0; i < embedding.length; i++) {
-                embedding[i] /= norm;
-            }
-        }
+            // SFace handles resize to 112x112 and normalization internally
+            faceRecognizer.feature(bgr, embedding);
 
-        return embedding;
+            // Extract float[] from 1x128 output Mat
+            FloatPointer fp = new FloatPointer(embedding.ptr());
+            float[] result = new float[EMBED_LENGTH];
+            fp.get(result);
+            return result;
+        } finally {
+            embedding.close();
+            if (bgr != null && bgr != mat) bgr.close();
+            mat.close();
+        }
     }
 
     public void enrollCriminal(long criminalId) {
