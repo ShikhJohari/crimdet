@@ -15,7 +15,8 @@ import java.util.*;
 public class FaceMatchingService {
 
     private static final Logger log = LoggerFactory.getLogger(FaceMatchingService.class);
-    private static final double DEFAULT_THRESHOLD = 0.6;
+    // SFace model author recommended cosine threshold (see sface.py in opencv_zoo)
+    private static final double DEFAULT_THRESHOLD = 0.363;
 
     private final FaceEmbeddingRepository embeddingRepo;
     private final CriminalRepository criminalRepo;
