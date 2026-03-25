@@ -43,7 +43,6 @@ data/*.trace.db
 djl-cache/
 model/
 *.pt
-*.onnx
 
 # JavaCPP / OpenCV native cache
 javacpp/
@@ -51,6 +50,9 @@ javacpp/
 # Application logs
 *.log
 logs/
+
+# ===== Worktrees =====
+.worktrees/
 
 # ===== OS =====
 .DS_Store
