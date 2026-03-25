@@ -121,7 +121,12 @@ public class FaceDetectionService {
 
     public synchronized List<DetectedFace> detectFaces(BufferedImage image) {
         if (useDnn) {
-            return detectFacesDnn(image);
+            try {
+                return detectFacesDnn(image);
+            } catch (Throwable e) {
+                log.warn("DNN detection failed, falling back to Haar: {}", e.getMessage());
+                return detectFacesHaar(image);
+            }
         }
         return detectFacesHaar(image);
     }
@@ -138,71 +143,74 @@ public class FaceDetectionService {
             return results;
         }
 
-        int imgWidth = mat.cols();
-        int imgHeight = mat.rows();
+        Mat bgr = null;
+        Mat blob = null;
+        Mat detections = null;
+        Mat detectionMat = null;
+        try {
+            int imgWidth = mat.cols();
+            int imgHeight = mat.rows();
 
-        // Ensure 3-channel BGR (Java2DFrameConverter may produce 4-channel BGRA)
-        Mat bgr;
-        if (mat.channels() == 4) {
-            bgr = new Mat();
-            cvtColor(mat, bgr, COLOR_BGRA2BGR);
-        } else if (mat.channels() == 1) {
-            bgr = new Mat();
-            cvtColor(mat, bgr, COLOR_GRAY2BGR);
-        } else {
-            bgr = mat;
-        }
-
-        // Create blob: resize to 300x300, mean subtraction (104, 177, 123)
-        Mat blob = blobFromImage(bgr, 1.0, new Size(300, 300),
-                new Scalar(104.0, 177.0, 123.0, 0.0), false, false, org.bytedeco.opencv.global.opencv_core.CV_32F);
-
-        dnnNet.setInput(blob);
-        Mat detections = dnnNet.forward();
-
-        // Output shape is [1, 1, N, 7] where each detection is:
-        // [batchId, classId, confidence, left, top, right, bottom]
-        // Reshape to [N, 7] for easier access
-        Mat detectionMat = detections.reshape(1, detections.total() > 0 ? (int) (detections.total() / 7) : 0);
-
-        for (int i = 0; i < detectionMat.rows(); i++) {
-            float confidence = detectionMat.ptr(i, 2).getFloat();
-
-            if (confidence < DNN_CONFIDENCE_THRESHOLD) {
-                continue;
+            // Ensure 3-channel BGR (Java2DFrameConverter may produce 4-channel BGRA)
+            if (mat.channels() == 4) {
+                bgr = new Mat();
+                cvtColor(mat, bgr, COLOR_BGRA2BGR);
+            } else if (mat.channels() == 1) {
+                bgr = new Mat();
+                cvtColor(mat, bgr, COLOR_GRAY2BGR);
+            } else {
+                bgr = mat;
             }
 
-            // Scale bounding box back to original image size
-            int x = (int) (detectionMat.ptr(i, 3).getFloat() * imgWidth);
-            int y = (int) (detectionMat.ptr(i, 4).getFloat() * imgHeight);
-            int x2 = (int) (detectionMat.ptr(i, 5).getFloat() * imgWidth);
-            int y2 = (int) (detectionMat.ptr(i, 6).getFloat() * imgHeight);
+            // Create blob: resize to 300x300, mean subtraction (104, 177, 123)
+            blob = blobFromImage(bgr, 1.0, new Size(300, 300),
+                    new Scalar(104.0, 177.0, 123.0, 0.0), false, false, org.bytedeco.opencv.global.opencv_core.CV_32F);
 
-            // Clamp to image bounds
-            int cropX = Math.max(0, x);
-            int cropY = Math.max(0, y);
-            int cropX2 = Math.min(imgWidth, x2);
-            int cropY2 = Math.min(imgHeight, y2);
-            int w = cropX2 - cropX;
-            int h = cropY2 - cropY;
+            dnnNet.setInput(blob);
+            detections = dnnNet.forward();
 
-            if (w <= 0 || h <= 0) {
-                continue;
+            // Output shape is [1, 1, N, 7] where each detection is:
+            // [batchId, classId, confidence, left, top, right, bottom]
+            // Reshape to [N, 7] for easier access
+            detectionMat = detections.reshape(1, detections.total() > 0 ? (int) (detections.total() / 7) : 0);
+
+            for (int i = 0; i < detectionMat.rows(); i++) {
+                float confidence = detectionMat.ptr(i, 2).getFloat();
+
+                if (confidence < DNN_CONFIDENCE_THRESHOLD) {
+                    continue;
+                }
+
+                // Scale bounding box back to original image size
+                int x = (int) (detectionMat.ptr(i, 3).getFloat() * imgWidth);
+                int y = (int) (detectionMat.ptr(i, 4).getFloat() * imgHeight);
+                int x2 = (int) (detectionMat.ptr(i, 5).getFloat() * imgWidth);
+                int y2 = (int) (detectionMat.ptr(i, 6).getFloat() * imgHeight);
+
+                // Clamp to image bounds
+                int cropX = Math.max(0, x);
+                int cropY = Math.max(0, y);
+                int cropX2 = Math.min(imgWidth, x2);
+                int cropY2 = Math.min(imgHeight, y2);
+                int w = cropX2 - cropX;
+                int h = cropY2 - cropY;
+
+                if (w <= 0 || h <= 0) {
+                    continue;
+                }
+
+                BufferedImage cropped = image.getSubimage(cropX, cropY, w, h);
+                results.add(new DetectedFace(cropX, cropY, w, h, cropped, confidence));
             }
 
-            BufferedImage cropped = image.getSubimage(cropX, cropY, w, h);
-            results.add(new DetectedFace(cropX, cropY, w, h, cropped, confidence));
+            log.info("DNN detected {} face(s)", results.size());
+        } finally {
+            if (detectionMat != null) detectionMat.close();
+            if (detections != null) detections.close();
+            if (blob != null) blob.close();
+            if (bgr != null && bgr != mat) bgr.close();
+            mat.close();
         }
-
-        log.info("DNN detected {} face(s)", results.size());
-
-        detectionMat.close();
-        detections.close();
-        blob.close();
-        if (bgr != mat) {
-            bgr.close();
-        }
-        mat.close();
 
         return results;
     }
@@ -220,7 +228,11 @@ public class FaceDetectionService {
         }
 
         Mat gray = new Mat();
-        cvtColor(mat, gray, COLOR_BGR2GRAY);
+        if (mat.channels() == 4) {
+            cvtColor(mat, gray, COLOR_BGRA2GRAY);
+        } else {
+            cvtColor(mat, gray, COLOR_BGR2GRAY);
+        }
 
         RectVector faces = new RectVector();
         // Tightened params: minNeighbors 5, minSize 80x80
