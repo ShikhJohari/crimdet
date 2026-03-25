@@ -1,10 +1,12 @@
 package com.crimdet.service;
 
 import com.crimdet.config.DatabaseConfig;
+import com.crimdet.model.Criminal;
 import com.crimdet.model.CriminalPhoto;
 import com.crimdet.model.DetectedFace;
 import com.crimdet.model.FaceEmbedding;
 import com.crimdet.repository.CriminalPhotoRepository;
+import com.crimdet.repository.CriminalRepository;
 import com.crimdet.repository.FaceEmbeddingRepository;
 import com.crimdet.util.EmbeddingUtils;
 import org.bytedeco.javacpp.FloatPointer;
@@ -148,5 +150,42 @@ public class FaceEmbeddingService {
         }
 
         log.info("Enrolled criminal id={}: {}/{} photos processed", criminalId, enrolled, photos.size());
+    }
+
+    /**
+     * Checks if stored embeddings are stale (wrong dimension) and re-enrolls all criminals if so.
+     */
+    public void migrateEmbeddingsIfNeeded() {
+        var firstEmbedding = embeddingRepo.findFirst();
+        if (firstEmbedding.isEmpty()) {
+            log.info("No embeddings found, skipping migration");
+            return;
+        }
+
+        float[] floats = EmbeddingUtils.toFloats(firstEmbedding.get().getEmbedding());
+        if (floats.length == EMBED_LENGTH) {
+            log.info("Embeddings are current (dim={}), no migration needed", EMBED_LENGTH);
+            return;
+        }
+
+        log.info("Stale embeddings detected (dim={}, expected={}), re-enrolling all criminals",
+                floats.length, EMBED_LENGTH);
+
+        var jdbi = DatabaseConfig.getInstance().getJdbi();
+        var criminalRepo = new CriminalRepository(jdbi);
+        List<Criminal> criminals = criminalRepo.findAll();
+
+        for (int i = 0; i < criminals.size(); i++) {
+            Criminal c = criminals.get(i);
+            log.info("Re-enrolling criminal {}/{}: id={} name='{}'",
+                    i + 1, criminals.size(), c.getId(), c.getName());
+            try {
+                enrollCriminal(c.getId());
+            } catch (Exception e) {
+                log.error("Failed to re-enroll criminal id={}", c.getId(), e);
+            }
+        }
+
+        log.info("Embedding migration complete: {} criminals re-enrolled", criminals.size());
     }
 }

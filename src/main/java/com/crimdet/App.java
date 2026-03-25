@@ -2,6 +2,7 @@ package com.crimdet;
 
 import atlantafx.base.theme.NordDark;
 import com.crimdet.config.DatabaseConfig;
+import com.crimdet.service.FaceEmbeddingService;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -20,6 +21,9 @@ public class App extends Application {
 
         // Initialize database
         DatabaseConfig.getInstance();
+
+        // Migrate stale embeddings (wrong dimension) before UI loads
+        new FaceEmbeddingService().migrateEmbeddingsIfNeeded();
 
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/main.fxml"));
         Scene scene = new Scene(root, 1200, 800);

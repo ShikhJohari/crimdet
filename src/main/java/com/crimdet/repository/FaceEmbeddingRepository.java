@@ -6,6 +6,7 @@ import org.jdbi.v3.core.mapper.RowMapper;
 
 import java.sql.Types;
 import java.util.List;
+import java.util.Optional;
 
 public class FaceEmbeddingRepository {
 
@@ -44,6 +45,14 @@ public class FaceEmbeddingRepository {
                         .bind("criminalId", criminalId)
                         .map(ROW_MAPPER)
                         .list()
+        );
+    }
+
+    public Optional<FaceEmbedding> findFirst() {
+        return jdbi.withHandle(handle ->
+                handle.createQuery("SELECT * FROM face_embeddings ORDER BY id LIMIT 1")
+                        .map(ROW_MAPPER)
+                        .findOne()
         );
     }
 
