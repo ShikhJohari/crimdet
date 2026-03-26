@@ -22,11 +22,14 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 
+import static org.bytedeco.opencv.global.opencv_core.*;
 import static org.bytedeco.opencv.global.opencv_imgproc.*;
 
 public class FaceEmbeddingService {
@@ -73,7 +76,84 @@ public class FaceEmbeddingService {
         }
     }
 
+    /**
+     * Extract embedding from a DetectedFace. Uses alignCrop when landmarks are available
+     * (YuNet detection), falls back to raw crop when they're not (DNN SSD / Haar).
+     */
+    public synchronized float[] extractEmbedding(DetectedFace face) {
+        if (face.getDetectionRow() != null && face.getOriginalImage() != null) {
+            return extractEmbeddingAligned(face.getOriginalImage(), face.getDetectionRow());
+        }
+        // Fallback for detectors without landmarks (DNN SSD, Haar)
+        return extractEmbeddingFromCrop(face.getCroppedFace());
+    }
+
+    /**
+     * Aligned extraction: uses FaceRecognizerSF.alignCrop with 5-point landmarks
+     * from FaceDetectorYN for consistent, pose-invariant embeddings.
+     */
+    private float[] extractEmbeddingAligned(BufferedImage originalImage, float[] detectionRow) {
+        Java2DFrameConverter java2dConverter = new Java2DFrameConverter();
+        OpenCVFrameConverter.ToMat matConverter = new OpenCVFrameConverter.ToMat();
+        Mat imageMat = matConverter.convert(java2dConverter.convert(originalImage));
+
+        if (imageMat == null || imageMat.empty()) {
+            log.warn("Failed to convert original image to Mat");
+            return new float[EMBED_LENGTH];
+        }
+
+        Mat bgr = null;
+        Mat aligned = new Mat();
+        Mat embedding = new Mat();
+        Mat faceRow = null;
+        try {
+            // Ensure 3-channel BGR
+            if (imageMat.channels() == 4) {
+                bgr = new Mat();
+                cvtColor(imageMat, bgr, COLOR_BGRA2BGR);
+            } else if (imageMat.channels() == 1) {
+                bgr = new Mat();
+                cvtColor(imageMat, bgr, COLOR_GRAY2BGR);
+            } else {
+                bgr = imageMat;
+            }
+
+            // Build a 1x15 float Mat from the detection row
+            faceRow = new Mat(1, 15, CV_32F);
+            FloatPointer fp = new FloatPointer(faceRow.ptr());
+            fp.put(detectionRow);
+            fp.close();
+
+            // alignCrop uses the 5 landmarks (indices 4-13) to compute a similarity
+            // transform that warps the face to canonical 112x112 positions
+            faceRecognizer.alignCrop(bgr, faceRow, aligned);
+
+            // Extract 128-D embedding from the aligned face
+            faceRecognizer.feature(aligned, embedding);
+
+            FloatPointer embPtr = new FloatPointer(embedding.ptr());
+            float[] result = new float[EMBED_LENGTH];
+            embPtr.get(result);
+            embPtr.close();
+            return result;
+        } finally {
+            embedding.close();
+            aligned.close();
+            if (faceRow != null) faceRow.close();
+            if (bgr != null && bgr != imageMat) bgr.close();
+            imageMat.close();
+        }
+    }
+
+    /**
+     * Extract embedding from a raw face image (no alignment).
+     * Used by tests with synthetic images and as fallback when detector has no landmarks.
+     */
     public synchronized float[] extractEmbedding(BufferedImage faceImage) {
+        return extractEmbeddingFromCrop(faceImage);
+    }
+
+    private float[] extractEmbeddingFromCrop(BufferedImage faceImage) {
         Java2DFrameConverter java2dConverter = new Java2DFrameConverter();
         OpenCVFrameConverter.ToMat matConverter = new OpenCVFrameConverter.ToMat();
         Mat mat = matConverter.convert(java2dConverter.convert(faceImage));
@@ -86,7 +166,6 @@ public class FaceEmbeddingService {
         Mat bgr = null;
         Mat embedding = new Mat();
         try {
-            // Ensure 3-channel BGR
             if (mat.channels() == 4) {
                 bgr = new Mat();
                 cvtColor(mat, bgr, COLOR_BGRA2BGR);
@@ -97,10 +176,8 @@ public class FaceEmbeddingService {
                 bgr = mat;
             }
 
-            // SFace handles resize to 112x112 internally; output is already L2-normalized
             faceRecognizer.feature(bgr, embedding);
 
-            // Extract float[] from 1x128 output Mat
             FloatPointer fp = new FloatPointer(embedding.ptr());
             float[] result = new float[EMBED_LENGTH];
             fp.get(result);
@@ -136,7 +213,7 @@ public class FaceEmbeddingService {
 
                 // Use the first (largest) detected face
                 DetectedFace face = faces.get(0);
-                float[] embedding = extractEmbedding(face.getCroppedFace());
+                float[] embedding = extractEmbedding(face);
 
                 FaceEmbedding fe = new FaceEmbedding();
                 fe.setCriminalId(criminalId);
@@ -163,13 +240,18 @@ public class FaceEmbeddingService {
         }
 
         float[] floats = EmbeddingUtils.toFloats(firstEmbedding.get().getEmbedding());
-        if (floats.length == EMBED_LENGTH) {
+        boolean dimensionMismatch = floats.length != EMBED_LENGTH;
+        // Force re-enrollment: existing 128-d embeddings may have been generated
+        // without face alignment (alignCrop). Always re-enroll to ensure quality.
+        boolean forceReenroll = true;
+
+        if (!dimensionMismatch && !forceReenroll) {
             log.info("Embeddings are current (dim={}), no migration needed", EMBED_LENGTH);
             return;
         }
 
-        log.info("Stale embeddings detected (dim={}, expected={}), re-enrolling all criminals",
-                floats.length, EMBED_LENGTH);
+        log.info("Re-enrolling all criminals (dim={}, expected={}, forceReenroll={})",
+                floats.length, EMBED_LENGTH, forceReenroll);
 
         var jdbi = DatabaseConfig.getInstance().getJdbi();
         var criminalRepo = new CriminalRepository(jdbi);

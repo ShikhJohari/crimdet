@@ -41,7 +41,7 @@ data/*.trace.db
 
 # DJL / PyTorch model cache
 djl-cache/
-model/
+/model/
 *.pt
 
 # JavaCPP / OpenCV native cache
@@ -71,3 +71,4 @@ ehthumbs.db
 *.keystore
 *.jks
 credentials.*
+.gstack/

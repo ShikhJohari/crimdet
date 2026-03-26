@@ -1,6 +1,7 @@
 package com.crimdet.service;
 
 import com.crimdet.model.DetectedFace;
+import org.bytedeco.javacpp.FloatPointer;
 import org.bytedeco.javacv.Java2DFrameConverter;
 import org.bytedeco.javacv.OpenCVFrameConverter;
 import org.bytedeco.opencv.opencv_core.Mat;
@@ -10,6 +11,7 @@ import org.bytedeco.opencv.opencv_core.Scalar;
 import org.bytedeco.opencv.opencv_core.Size;
 import org.bytedeco.opencv.opencv_dnn.Net;
 import org.bytedeco.opencv.opencv_objdetect.CascadeClassifier;
+import org.bytedeco.opencv.opencv_objdetect.FaceDetectorYN;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,22 +30,37 @@ public class FaceDetectionService {
 
     private static final Logger log = LoggerFactory.getLogger(FaceDetectionService.class);
 
+    private static final float YUNET_SCORE_THRESHOLD = 0.5f;
+    private static final float YUNET_NMS_THRESHOLD = 0.3f;
+    private static final int YUNET_TOP_K = 5000;
+
     private static final double DNN_CONFIDENCE_THRESHOLD = 0.5;
+    private static final int MAX_DETECT_DIMENSION = 800;
 
     private static FaceDetectionService instance;
     private static RuntimeException initError;
 
+    private FaceDetectorYN yunetDetector;
+    private boolean useYunet;
+
     private Net dnnNet;
     private boolean useDnn;
+
     private final CascadeClassifier classifier;
 
     private FaceDetectionService() {
         try {
-            // Try loading DNN SSD model as primary detector
-            dnnNet = loadDnnModel();
-            useDnn = (dnnNet != null);
+            // Priority 1: FaceDetectorYN (YuNet) — provides landmarks for alignCrop
+            yunetDetector = loadYunetModel();
+            useYunet = (yunetDetector != null);
 
-            // Always load Haar cascade (as fallback or if DNN fails at runtime)
+            // Priority 2: DNN SSD — bounding boxes only (no alignment possible)
+            if (!useYunet) {
+                dnnNet = loadDnnModel();
+                useDnn = (dnnNet != null);
+            }
+
+            // Priority 3: Haar cascade (always loaded as final fallback)
             InputStream is = getClass().getResourceAsStream("/models/haarcascade_frontalface_default.xml");
             if (is == null) {
                 throw new RuntimeException("Haar cascade resource not found");
@@ -58,13 +75,40 @@ public class FaceDetectionService {
                 throw new RuntimeException("Failed to load cascade classifier");
             }
 
-            if (useDnn) {
-                log.info("Face detection initialized: DNN SSD primary, Haar fallback");
+            if (useYunet) {
+                log.info("Face detection initialized: YuNet primary (with landmarks), Haar fallback");
+            } else if (useDnn) {
+                log.info("Face detection initialized: DNN SSD primary (no landmarks), Haar fallback");
             } else {
                 log.info("Face detection initialized: Haar cascade only");
             }
         } catch (Throwable e) {
             throw new RuntimeException("Failed to initialize face detection: " + e.getMessage(), e);
+        }
+    }
+
+    private FaceDetectorYN loadYunetModel() {
+        try {
+            InputStream is = getClass().getResourceAsStream("/models/face_detection_yunet_2023mar.onnx");
+            if (is == null) {
+                log.warn("YuNet model not found in resources, trying DNN SSD fallback");
+                return null;
+            }
+            Path tempFile = Files.createTempFile("yunet_model", ".onnx");
+            tempFile.toFile().deleteOnExit();
+            Files.copy(is, tempFile, StandardCopyOption.REPLACE_EXISTING);
+            is.close();
+
+            // Create with a default input size; we'll call setInputSize before each detect
+            FaceDetectorYN detector = FaceDetectorYN.create(
+                    tempFile.toString(), "", new Size(320, 320),
+                    YUNET_SCORE_THRESHOLD, YUNET_NMS_THRESHOLD, YUNET_TOP_K, 0, 0);
+
+            log.info("YuNet face detection model loaded (with landmark support)");
+            return detector;
+        } catch (Throwable e) {
+            log.warn("Failed to load YuNet model, trying DNN SSD fallback: {}", e.getMessage());
+            return null;
         }
     }
 
@@ -96,7 +140,7 @@ public class FaceDetectionService {
                 return null;
             }
 
-            log.info("DNN SSD face detection model loaded");
+            log.info("DNN SSD face detection model loaded (no landmark support)");
             return net;
         } catch (Throwable e) {
             log.warn("Failed to load DNN model, falling back to Haar cascade: {}", e.getMessage());
@@ -120,15 +164,116 @@ public class FaceDetectionService {
     }
 
     public synchronized List<DetectedFace> detectFaces(BufferedImage image) {
+        if (useYunet) {
+            try {
+                return detectFacesYunet(image);
+            } catch (Throwable e) {
+                log.warn("YuNet detection failed, falling back: {}", e.getMessage());
+            }
+        }
         if (useDnn) {
             try {
                 return detectFacesDnn(image);
             } catch (Throwable e) {
                 log.warn("DNN detection failed, falling back to Haar: {}", e.getMessage());
-                return detectFacesHaar(image);
             }
         }
         return detectFacesHaar(image);
+    }
+
+    private List<DetectedFace> detectFacesYunet(BufferedImage image) {
+        List<DetectedFace> results = new ArrayList<>();
+
+        Java2DFrameConverter java2dConverter = new Java2DFrameConverter();
+        OpenCVFrameConverter.ToMat matConverter = new OpenCVFrameConverter.ToMat();
+        Mat mat = matConverter.convert(java2dConverter.convert(image));
+
+        if (mat == null || mat.empty()) {
+            log.warn("Failed to convert image to Mat");
+            return results;
+        }
+
+        Mat bgr = null;
+        Mat detectBgr = null;
+        Mat faces = new Mat();
+        try {
+            // Ensure 3-channel BGR
+            if (mat.channels() == 4) {
+                bgr = new Mat();
+                cvtColor(mat, bgr, COLOR_BGRA2BGR);
+            } else if (mat.channels() == 1) {
+                bgr = new Mat();
+                cvtColor(mat, bgr, COLOR_GRAY2BGR);
+            } else {
+                bgr = mat;
+            }
+
+            int origW = bgr.cols();
+            int origH = bgr.rows();
+
+            // Scale down large images for detection, then map coordinates back
+            float scale = 1.0f;
+            if (Math.max(origW, origH) > MAX_DETECT_DIMENSION) {
+                scale = (float) MAX_DETECT_DIMENSION / Math.max(origW, origH);
+                int newW = Math.round(origW * scale);
+                int newH = Math.round(origH * scale);
+                detectBgr = new Mat();
+                resize(bgr, detectBgr, new Size(newW, newH));
+                log.debug("Scaled {}x{} -> {}x{} for detection (scale={})", origW, origH, newW, newH, scale);
+            } else {
+                detectBgr = bgr;
+            }
+
+            yunetDetector.setInputSize(new Size(detectBgr.cols(), detectBgr.rows()));
+            yunetDetector.detect(detectBgr, faces);
+
+            float invScale = 1.0f / scale;
+
+            for (int i = 0; i < faces.rows(); i++) {
+                FloatPointer rowPtr = new FloatPointer(faces.row(i).ptr());
+                float[] detectionRow = new float[15];
+                rowPtr.get(detectionRow);
+                rowPtr.close();
+
+                // Scale all coordinates back to original image space
+                // Indices 0-13 are coordinates; index 14 is score (no scaling)
+                float[] scaledRow = new float[15];
+                for (int j = 0; j < 14; j++) {
+                    scaledRow[j] = detectionRow[j] * invScale;
+                }
+                scaledRow[14] = detectionRow[14]; // score unchanged
+
+                int x = Math.max(0, (int) scaledRow[0]);
+                int y = Math.max(0, (int) scaledRow[1]);
+                int w = (int) scaledRow[2];
+                int h = (int) scaledRow[3];
+                float score = scaledRow[14];
+
+                // Clamp to image bounds
+                int cropX2 = Math.min(origW, x + w);
+                int cropY2 = Math.min(origH, y + h);
+                w = cropX2 - x;
+                h = cropY2 - y;
+
+                if (w <= 0 || h <= 0) continue;
+
+                BufferedImage cropped = image.getSubimage(x, y, w, h);
+
+                DetectedFace face = new DetectedFace(x, y, w, h, cropped, score);
+                face.setDetectionRow(scaledRow);
+                face.setOriginalImage(image);
+                results.add(face);
+            }
+
+            log.info("YuNet detected {} face(s) (image: {}x{}, scale: {})", results.size(), origW, origH, scale);
+        } finally {
+            faces.close();
+            if (detectBgr != null && detectBgr != bgr) detectBgr.close();
+            if (bgr != null && bgr != mat) bgr.close();
+            mat.close();
+        }
+
+        return results;
     }
 
     private List<DetectedFace> detectFacesDnn(BufferedImage image) {
@@ -151,7 +296,6 @@ public class FaceDetectionService {
             int imgWidth = mat.cols();
             int imgHeight = mat.rows();
 
-            // Ensure 3-channel BGR (Java2DFrameConverter may produce 4-channel BGRA)
             if (mat.channels() == 4) {
                 bgr = new Mat();
                 cvtColor(mat, bgr, COLOR_BGRA2BGR);
@@ -162,16 +306,12 @@ public class FaceDetectionService {
                 bgr = mat;
             }
 
-            // Create blob: resize to 300x300, mean subtraction (104, 177, 123)
             blob = blobFromImage(bgr, 1.0, new Size(300, 300),
                     new Scalar(104.0, 177.0, 123.0, 0.0), false, false, org.bytedeco.opencv.global.opencv_core.CV_32F);
 
             dnnNet.setInput(blob);
             detections = dnnNet.forward();
 
-            // Output shape is [1, 1, N, 7] where each detection is:
-            // [batchId, classId, confidence, left, top, right, bottom]
-            // Reshape to [N, 7] for easier access
             detectionMat = detections.reshape(1, detections.total() > 0 ? (int) (detections.total() / 7) : 0);
 
             for (int i = 0; i < detectionMat.rows(); i++) {
@@ -181,13 +321,11 @@ public class FaceDetectionService {
                     continue;
                 }
 
-                // Scale bounding box back to original image size
                 int x = (int) (detectionMat.ptr(i, 3).getFloat() * imgWidth);
                 int y = (int) (detectionMat.ptr(i, 4).getFloat() * imgHeight);
                 int x2 = (int) (detectionMat.ptr(i, 5).getFloat() * imgWidth);
                 int y2 = (int) (detectionMat.ptr(i, 6).getFloat() * imgHeight);
 
-                // Clamp to image bounds
                 int cropX = Math.max(0, x);
                 int cropY = Math.max(0, y);
                 int cropX2 = Math.min(imgWidth, x2);
@@ -200,6 +338,7 @@ public class FaceDetectionService {
                 }
 
                 BufferedImage cropped = image.getSubimage(cropX, cropY, w, h);
+                // DNN SSD has no landmarks — detectionRow stays null
                 results.add(new DetectedFace(cropX, cropY, w, h, cropped, confidence));
             }
 
@@ -247,7 +386,6 @@ public class FaceDetectionService {
             int w = rect.width();
             int h = rect.height();
 
-            // Clamp to image bounds
             int cropX = Math.max(0, x);
             int cropY = Math.max(0, y);
             int cropW = Math.min(w, image.getWidth() - cropX);
@@ -255,7 +393,7 @@ public class FaceDetectionService {
 
             BufferedImage cropped = image.getSubimage(cropX, cropY, cropW, cropH);
 
-            // Haar doesn't provide confidence; use fixed value
+            // Haar doesn't provide confidence or landmarks
             results.add(new DetectedFace(x, y, w, h, cropped, 1.0));
         }
 

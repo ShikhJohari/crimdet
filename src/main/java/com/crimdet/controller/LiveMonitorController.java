@@ -173,7 +173,7 @@ public class LiveMonitorController {
                 for (DetectedFace face : faces) {
                     if (Thread.interrupted()) return;
 
-                    float[] embedding = embeddingService.extractEmbedding(face.getCroppedFace());
+                    float[] embedding = embeddingService.extractEmbedding(face);
                     if (Thread.interrupted()) return;
 
                     List<MatchResult> matches = matchingService.findMatches(embedding);

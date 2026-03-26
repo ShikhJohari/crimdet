@@ -11,6 +11,11 @@ public class DetectedFace {
     private BufferedImage croppedFace;
     private double confidence;
 
+    // FaceDetectorYN detection row: [x, y, w, h, x_re, y_re, x_le, y_le, x_nt, y_nt, x_rcm, y_rcm, x_lcm, y_lcm, score]
+    private float[] detectionRow;
+    // Reference to the full original image (needed for alignCrop)
+    private BufferedImage originalImage;
+
     public DetectedFace() {}
 
     public DetectedFace(int x, int y, int width, int height, BufferedImage croppedFace, double confidence) {
@@ -39,4 +44,10 @@ public class DetectedFace {
 
     public double getConfidence() { return confidence; }
     public void setConfidence(double confidence) { this.confidence = confidence; }
+
+    public float[] getDetectionRow() { return detectionRow; }
+    public void setDetectionRow(float[] detectionRow) { this.detectionRow = detectionRow; }
+
+    public BufferedImage getOriginalImage() { return originalImage; }
+    public void setOriginalImage(BufferedImage originalImage) { this.originalImage = originalImage; }
 }
