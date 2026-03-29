@@ -1,17 +1,27 @@
 package com.crimdet.controller;
 
+import java.time.format.DateTimeFormatter;
+
+import org.kordamp.ikonli.javafx.FontIcon;
+
 import com.crimdet.model.Criminal;
 import com.crimdet.model.CriminalStatus;
 import com.crimdet.service.CriminalService;
+
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
-import javafx.scene.control.*;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.TableCell;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableRow;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.HBox;
-import org.kordamp.ikonli.javafx.FontIcon;
-
-import java.time.format.DateTimeFormatter;
 
 public class CriminalListController {
 
