@@ -27,6 +27,7 @@ public class MainController {
     private final ToggleGroup navGroup = new ToggleGroup();
     private final Map<String, Node> screenCache = new HashMap<>();
     private final Map<String, Object> controllerCache = new HashMap<>();
+    private String currentScreenName;
 
     @FXML
     public void initialize() {
@@ -95,6 +96,14 @@ public class MainController {
     }
 
     private void loadScreen(String name) {
+        // Deactivate current screen if needed
+        if (currentScreenName != null) {
+            Object ctrl = controllerCache.get(currentScreenName);
+            if (ctrl instanceof LiveMonitorController lmc) {
+                lmc.onScreenDeactivated();
+            }
+        }
+
         Node screen = screenCache.get(name);
         if (screen == null) {
             try {
@@ -128,6 +137,7 @@ public class MainController {
                 return;
             }
         }
+        currentScreenName = name;
         contentArea.getChildren().setAll(screen);
     }
 }

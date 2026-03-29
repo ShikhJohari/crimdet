@@ -3,6 +3,7 @@ package com.crimdet;
 import atlantafx.base.theme.NordDark;
 import com.crimdet.config.DatabaseConfig;
 import com.crimdet.service.FaceEmbeddingService;
+import com.crimdet.service.WebcamService;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -38,6 +39,7 @@ public class App extends Application {
 
     @Override
     public void stop() {
+        WebcamService.shutdownAll();
         DatabaseConfig.getInstance().close();
         log.info("CrimDet shutdown");
     }

@@ -5,6 +5,7 @@
 <?import javafx.scene.image.*?>
 <?import javafx.scene.canvas.*?>
 <?import javafx.geometry.*?>
+<?import org.kordamp.ikonli.javafx.*?>
 
 <BorderPane xmlns:fx="http://javafx.com/fxml"
             fx:controller="com.crimdet.controller.LiveMonitorController"
@@ -14,10 +15,14 @@
     <top>
         <VBox spacing="12">
             <padding><Insets topRightBottomLeft="24"/></padding>
-            <Label text="Image Scanner" styleClass="title-2"/>
+            <Label text="Live Monitor" styleClass="title-2"/>
             <HBox spacing="8" alignment="CENTER_LEFT">
-                <Button fx:id="uploadBtn" text="Upload Image" onAction="#onUpload"
-                        styleClass="accent"/>
+                <Button fx:id="webcamBtn" text="Start Webcam" onAction="#onToggleWebcam"
+                        styleClass="accent">
+                    <graphic><FontIcon iconLiteral="mdi2c-camera" iconSize="18"/></graphic>
+                </Button>
+                <Separator orientation="VERTICAL" prefHeight="24"/>
+                <Button fx:id="uploadBtn" text="Upload Image" onAction="#onUpload"/>
                 <Button fx:id="scanBtn" text="Scan" onAction="#onScan" disable="true"/>
                 <Button fx:id="clearBtn" text="Clear" onAction="#onClear" disable="true"/>
             </HBox>

@@ -7,8 +7,10 @@ import com.crimdet.service.CriminalService;
 import com.crimdet.service.FaceDetectionService;
 import com.crimdet.service.FaceEmbeddingService;
 import com.crimdet.service.FaceMatchingService;
+import com.crimdet.service.WebcamService;
 import com.crimdet.util.ImageUtils;
 import javafx.application.Platform;
+import javafx.embed.swing.SwingFXUtils;
 import javafx.fxml.FXML;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -19,6 +21,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.image.WritableImage;
 import javafx.scene.Cursor;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
@@ -34,17 +37,25 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.List;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 public class LiveMonitorController {
 
     private static final Logger log = LoggerFactory.getLogger(LiveMonitorController.class);
+    private static final Duration MATCH_COOLDOWN = Duration.ofSeconds(30);
+
+    private enum MonitorMode { IDLE, WEBCAM_STARTING, WEBCAM_RUNNING, IMAGE_LOADED, SCANNING }
 
     @FXML private StackPane imageContainer;
     @FXML private ImageView imageView;
     @FXML private Canvas overlayCanvas;
     @FXML private Label emptyImageLabel;
+    @FXML private Button webcamBtn;
     @FXML private Button uploadBtn;
     @FXML private Button scanBtn;
     @FXML private Button clearBtn;
@@ -62,6 +73,23 @@ public class LiveMonitorController {
     private FaceMatchingService matchingService;
     private DetectionLogRepository detectionLogRepo;
 
+    // Webcam fields
+    private WebcamService webcamService;
+    private ExecutorService detectionExecutor;
+    private WritableImage webcamImage;
+    private final AtomicReference<BufferedImage> displayFrame = new AtomicReference<>();
+    private final AtomicReference<BufferedImage> detectionFrame = new AtomicReference<>();
+    private volatile boolean detectionBusy = false;
+    private volatile boolean renderPending = false;
+    private final Map<Long, Instant> matchCooldowns = new ConcurrentHashMap<>();
+    private Set<Long> previousMatchIds = new HashSet<>();
+    private MonitorMode mode = MonitorMode.IDLE;
+
+    // Store scan results for overlay drawing
+    private List<FaceResult> lastResults = new ArrayList<>();
+    private volatile Thread activeScanThread;
+    private boolean drawScheduled = false;
+
     private void ensureServicesInitialized() {
         if (criminalService == null) {
             criminalService = new CriminalService();
@@ -70,11 +98,6 @@ public class LiveMonitorController {
             detectionLogRepo = new DetectionLogRepository(DatabaseConfig.getInstance().getJdbi());
         }
     }
-
-    // Store scan results for overlay drawing
-    private List<FaceResult> lastResults = new ArrayList<>();
-    private volatile Thread activeScanThread;
-    private boolean drawScheduled = false;
 
     public void setMainController(MainController mainController) {
         this.mainController = mainController;
@@ -92,6 +115,7 @@ public class LiveMonitorController {
         imageContainer.heightProperty().addListener((obs, o, n) -> scheduleDrawOverlay());
 
         showEmptyState();
+        updateMode(MonitorMode.IDLE);
     }
 
     private void scheduleDrawOverlay() {
@@ -104,8 +128,259 @@ public class LiveMonitorController {
         }
     }
 
+    // ── Webcam ──────────────────────────────────────────────────
+
+    @FXML
+    public void onToggleWebcam() {
+        if (mode == MonitorMode.WEBCAM_RUNNING) {
+            stopWebcam();
+            updateMode(MonitorMode.IDLE);
+            showEmptyState();
+            return;
+        }
+
+        // Stop any image scan in progress
+        if (activeScanThread != null && activeScanThread.isAlive()) {
+            activeScanThread.interrupt();
+        }
+
+        currentImage = null;
+        currentImageBytes = null;
+        lastResults.clear();
+        clearOverlay();
+        showEmptyResults();
+
+        updateMode(MonitorMode.WEBCAM_STARTING);
+        emptyImageLabel.setText("Connecting to camera...");
+        emptyImageLabel.setVisible(true);
+        emptyImageLabel.setManaged(true);
+        progressIndicator.setVisible(true);
+        progressIndicator.setManaged(true);
+
+        ensureServicesInitialized();
+
+        if (webcamService == null) {
+            webcamService = new WebcamService();
+        }
+
+        detectionExecutor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "detection-worker");
+            t.setDaemon(true);
+            return t;
+        });
+
+        matchingService.refreshCache();
+
+        webcamService.start(this::onCameraFrame, this::onCameraStateChanged);
+    }
+
+    private void onCameraFrame(BufferedImage frame) {
+        displayFrame.set(frame);
+        detectionFrame.set(frame);
+
+        // Display path (coalesced)
+        if (!renderPending) {
+            renderPending = true;
+            Platform.runLater(() -> {
+                renderPending = false;
+                BufferedImage f = displayFrame.get();
+                if (f == null) return;
+                if (webcamImage == null || (int) webcamImage.getWidth() != f.getWidth()
+                        || (int) webcamImage.getHeight() != f.getHeight()) {
+                    webcamImage = new WritableImage(f.getWidth(), f.getHeight());
+                }
+                SwingFXUtils.toFXImage(f, webcamImage);
+                imageView.setImage(webcamImage);
+                emptyImageLabel.setVisible(false);
+                emptyImageLabel.setManaged(false);
+            });
+        }
+
+        // Detection path (throttled by detectionBusy)
+        if (!detectionBusy && detectionExecutor != null && !detectionExecutor.isShutdown()) {
+            detectionExecutor.submit(this::runDetectionCycle);
+        }
+    }
+
+    private void onCameraStateChanged(WebcamService.State oldState, WebcamService.State newState, String errorMsg) {
+        Platform.runLater(() -> {
+            if (newState == WebcamService.State.RUNNING) {
+                updateMode(MonitorMode.WEBCAM_RUNNING);
+                progressIndicator.setVisible(false);
+                progressIndicator.setManaged(false);
+                emptyImageLabel.setVisible(false);
+                emptyImageLabel.setManaged(false);
+                statusLabel.setText("Webcam active — scanning for faces...");
+            } else if (newState == WebcamService.State.ERROR) {
+                stopWebcam();
+                updateMode(MonitorMode.IDLE);
+                String msg = errorMsg != null ? errorMsg
+                        : "Camera access denied. Grant access in System Settings > Privacy & Security > Camera, then try again.";
+                emptyImageLabel.setText(msg);
+                emptyImageLabel.setVisible(true);
+                emptyImageLabel.setManaged(true);
+                progressIndicator.setVisible(false);
+                progressIndicator.setManaged(false);
+                statusLabel.setText("Camera error");
+            }
+        });
+    }
+
+    private void runDetectionCycle() {
+        if (detectionBusy) return;
+        detectionBusy = true;
+        try {
+            BufferedImage frame = detectionFrame.getAndSet(null);
+            if (frame == null) return;
+
+            long startMs = System.currentTimeMillis();
+            List<DetectedFace> faces = FaceDetectionService.getInstance().detectFaces(frame);
+            List<FaceResult> results = new ArrayList<>();
+            int matchCount = 0;
+
+            for (DetectedFace face : faces) {
+                float[] embedding = embeddingService.extractEmbedding(face);
+                // Null out originalImage to free 1080p frame memory
+                face.setOriginalImage(null);
+
+                List<MatchResult> matches = matchingService.findMatches(embedding);
+                if (!matches.isEmpty()) {
+                    MatchResult best = matches.get(0);
+                    results.add(new FaceResult(face, best));
+                    matchCount++;
+                    logMatchWithDeduplication(best, face);
+                } else {
+                    results.add(new FaceResult(face, null));
+                }
+            }
+
+            long durationMs = System.currentTimeMillis() - startMs;
+            double fps = durationMs > 0 ? 1000.0 / durationMs : 0;
+
+            final var finalResults = results;
+            final int faceCount = faces.size();
+            final int finalMatchCount = matchCount;
+
+            // Only rebuild cards if match set changed
+            Set<Long> currentMatchIds = results.stream()
+                    .filter(r -> r.match() != null)
+                    .map(r -> r.match().getCriminalId())
+                    .collect(Collectors.toSet());
+            boolean cardsChanged = !currentMatchIds.equals(previousMatchIds);
+            previousMatchIds = currentMatchIds;
+
+            Platform.runLater(() -> {
+                lastResults = finalResults;
+                drawOverlay();
+                if (cardsChanged) buildResultCards(finalResults);
+                statusLabel.setText(String.format("Faces: %d | Matches: %d | Detection: %.1f fps",
+                        faceCount, finalMatchCount, fps));
+            });
+        } catch (Exception e) {
+            log.error("Detection cycle failed", e);
+        } finally {
+            detectionBusy = false;
+        }
+    }
+
+    private void logMatchWithDeduplication(MatchResult match, DetectedFace face) {
+        long criminalId = match.getCriminalId();
+        Instant now = Instant.now();
+        Instant lastLogged = matchCooldowns.get(criminalId);
+        if (lastLogged != null && Duration.between(lastLogged, now).compareTo(MATCH_COOLDOWN) < 0) {
+            return;
+        }
+        matchCooldowns.put(criminalId, now);
+        try {
+            DetectionLog dl = new DetectionLog();
+            dl.setCriminalId(criminalId);
+            dl.setConfidence(match.getConfidence());
+            dl.setScreenshot(ImageUtils.toBytes(face.getCroppedFace(), "png"));
+            dl.setNotes("Webcam live detection: " + match.getCriminalName());
+            detectionLogRepo.insert(dl);
+        } catch (Exception e) {
+            log.error("Failed to log detection", e);
+        }
+    }
+
+    private void stopWebcam() {
+        if (webcamService != null) webcamService.stop();
+        if (detectionExecutor != null) {
+            detectionExecutor.shutdownNow();
+            try { detectionExecutor.awaitTermination(2, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            detectionExecutor = null;
+        }
+        webcamImage = null;
+        displayFrame.set(null);
+        detectionFrame.set(null);
+        detectionBusy = false;
+        matchCooldowns.clear();
+        previousMatchIds.clear();
+    }
+
+    public void onScreenDeactivated() {
+        if (mode == MonitorMode.WEBCAM_RUNNING || mode == MonitorMode.WEBCAM_STARTING) {
+            stopWebcam();
+            updateMode(MonitorMode.IDLE);
+            showEmptyState();
+        }
+    }
+
+    private void updateMode(MonitorMode newMode) {
+        this.mode = newMode;
+        switch (newMode) {
+            case IDLE -> {
+                webcamBtn.setText("Start Webcam");
+                webcamBtn.setDisable(false);
+                webcamBtn.getStyleClass().remove("webcam-active");
+                if (!webcamBtn.getStyleClass().contains("accent")) webcamBtn.getStyleClass().add("accent");
+                uploadBtn.setDisable(false);
+                scanBtn.setDisable(true);
+                clearBtn.setDisable(true);
+            }
+            case WEBCAM_STARTING -> {
+                webcamBtn.setText("Starting...");
+                webcamBtn.setDisable(true);
+                uploadBtn.setDisable(true);
+                scanBtn.setDisable(true);
+                clearBtn.setDisable(true);
+            }
+            case WEBCAM_RUNNING -> {
+                webcamBtn.setText("Stop Webcam");
+                webcamBtn.setDisable(false);
+                webcamBtn.getStyleClass().remove("accent");
+                if (!webcamBtn.getStyleClass().contains("webcam-active")) webcamBtn.getStyleClass().add("webcam-active");
+                uploadBtn.setDisable(true);
+                scanBtn.setDisable(true);
+                clearBtn.setDisable(true);
+            }
+            case IMAGE_LOADED -> {
+                webcamBtn.setText("Start Webcam");
+                webcamBtn.setDisable(false);
+                webcamBtn.getStyleClass().remove("webcam-active");
+                if (!webcamBtn.getStyleClass().contains("accent")) webcamBtn.getStyleClass().add("accent");
+                uploadBtn.setDisable(false);
+                scanBtn.setDisable(false);
+                clearBtn.setDisable(false);
+            }
+            case SCANNING -> {
+                webcamBtn.setDisable(true);
+                uploadBtn.setDisable(true);
+                scanBtn.setDisable(true);
+                clearBtn.setDisable(true);
+            }
+        }
+    }
+
+    // ── Image upload/scan (existing) ────────────────────────────
+
     @FXML
     public void onUpload() {
+        // Stop webcam if active
+        if (mode == MonitorMode.WEBCAM_RUNNING || mode == MonitorMode.WEBCAM_STARTING) {
+            stopWebcam();
+        }
+
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Select Image to Scan");
         chooser.getExtensionFilters().addAll(
@@ -114,7 +389,10 @@ public class LiveMonitorController {
         );
 
         File file = chooser.showOpenDialog(imageView.getScene().getWindow());
-        if (file == null) return;
+        if (file == null) {
+            if (currentImage == null) updateMode(MonitorMode.IDLE);
+            return;
+        }
 
         try {
             currentImageBytes = Files.readAllBytes(file.toPath());
@@ -128,8 +406,8 @@ public class LiveMonitorController {
             imageView.setImage(fxImage);
             emptyImageLabel.setVisible(false);
             emptyImageLabel.setManaged(false);
-            scanBtn.setDisable(false);
-            clearBtn.setDisable(false);
+
+            updateMode(MonitorMode.IMAGE_LOADED);
 
             // Clear previous results
             lastResults.clear();
@@ -220,6 +498,11 @@ public class LiveMonitorController {
 
     @FXML
     public void onClear() {
+        // Stop webcam if active
+        if (mode == MonitorMode.WEBCAM_RUNNING || mode == MonitorMode.WEBCAM_STARTING) {
+            stopWebcam();
+        }
+
         // Cancel any running scan
         if (activeScanThread != null && activeScanThread.isAlive()) {
             activeScanThread.interrupt();
@@ -231,10 +514,11 @@ public class LiveMonitorController {
         lastResults.clear();
         clearOverlay();
         showEmptyState();
-        scanBtn.setDisable(true);
-        clearBtn.setDisable(true);
+        updateMode(MonitorMode.IDLE);
         updateStatus(0, 0);
     }
+
+    // ── Overlay drawing ─────────────────────────────────────────
 
     private void drawOverlay() {
         if (imageView.getImage() == null || lastResults.isEmpty()) {
@@ -307,6 +591,8 @@ public class LiveMonitorController {
         GraphicsContext gc = overlayCanvas.getGraphicsContext2D();
         gc.clearRect(0, 0, overlayCanvas.getWidth(), overlayCanvas.getHeight());
     }
+
+    // ── Result cards ────────────────────────────────────────────
 
     private void buildResultCards(List<FaceResult> results) {
         resultsBox.getChildren().clear();
@@ -425,7 +711,10 @@ public class LiveMonitorController {
         return card;
     }
 
+    // ── UI helpers ──────────────────────────────────────────────
+
     private void showEmptyState() {
+        emptyImageLabel.setText("Drop or upload an image to scan");
         emptyImageLabel.setVisible(true);
         emptyImageLabel.setManaged(true);
         showEmptyResults();
@@ -445,12 +734,14 @@ public class LiveMonitorController {
     }
 
     private void setScanning(boolean scanning) {
+        if (scanning) {
+            updateMode(MonitorMode.SCANNING);
+        } else {
+            updateMode(currentImage != null ? MonitorMode.IMAGE_LOADED : MonitorMode.IDLE);
+        }
         progressIndicator.setVisible(scanning);
         progressIndicator.setManaged(scanning);
         progressLabel.setText(scanning ? "Scanning..." : "");
-        uploadBtn.setDisable(scanning);
-        scanBtn.setDisable(scanning);
-        clearBtn.setDisable(scanning);
     }
 
     private static String toHex(Color c) {

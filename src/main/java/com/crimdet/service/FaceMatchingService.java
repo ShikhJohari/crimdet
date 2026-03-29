@@ -44,7 +44,7 @@ public class FaceMatchingService {
                 embeddingCache.size(), all.size());
     }
 
-    public List<MatchResult> findMatches(float[] queryEmbedding, double threshold) {
+    public synchronized List<MatchResult> findMatches(float[] queryEmbedding, double threshold) {
         List<MatchResult> matches = new ArrayList<>();
 
         for (Map.Entry<Long, List<float[]>> entry : embeddingCache.entrySet()) {

@@ -186,6 +186,22 @@
     -fx-background-color: -color-fg-muted;
 }
 
+/* Webcam controls */
+.webcam-active {
+    -fx-background-color: -color-danger-emphasis;
+    -fx-text-fill: white;
+}
+
+.webcam-dot {
+    -fx-min-width: 8; -fx-min-height: 8;
+    -fx-max-width: 8; -fx-max-height: 8;
+    -fx-background-radius: 4;
+}
+
+.webcam-dot-active { -fx-background-color: -color-success-emphasis; }
+.webcam-dot-starting { -fx-background-color: -color-warning-emphasis; }
+.webcam-dot-off { -fx-background-color: -color-fg-muted; }
+
 /* Detection History */
 .filter-bar {
     -fx-background-color: -color-bg-subtle;
