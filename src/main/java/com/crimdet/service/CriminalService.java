@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.LongConsumer;
 
 public class CriminalService {
 
@@ -18,16 +19,25 @@ public class CriminalService {
 
     private final CriminalRepository criminalRepo;
     private final CriminalPhotoRepository photoRepo;
+    private final LongConsumer onDeleteEmbeddingHook;
 
     public CriminalService() {
         var jdbi = DatabaseConfig.getInstance().getJdbi();
         this.criminalRepo = new CriminalRepository(jdbi);
         this.photoRepo = new CriminalPhotoRepository(jdbi);
+        this.onDeleteEmbeddingHook = id -> EmbeddingStore.getInstance().evictForCriminal(id);
     }
 
     public CriminalService(CriminalRepository criminalRepo, CriminalPhotoRepository photoRepo) {
+        this(criminalRepo, photoRepo, id -> {});
+    }
+
+    public CriminalService(CriminalRepository criminalRepo,
+                           CriminalPhotoRepository photoRepo,
+                           LongConsumer onDeleteEmbeddingHook) {
         this.criminalRepo = criminalRepo;
         this.photoRepo = photoRepo;
+        this.onDeleteEmbeddingHook = onDeleteEmbeddingHook;
     }
 
     public long addCriminal(Criminal criminal) {
@@ -43,6 +53,7 @@ public class CriminalService {
 
     public void deleteCriminal(long id) {
         criminalRepo.delete(id);
+        onDeleteEmbeddingHook.accept(id);
         log.info("Deleted criminal id={}", id);
     }
 

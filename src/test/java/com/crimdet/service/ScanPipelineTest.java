@@ -29,6 +29,7 @@ class ScanPipelineTest {
     private CriminalRepository criminalRepo;
     private CriminalPhotoRepository photoRepo;
     private FaceEmbeddingRepository embeddingRepo;
+    private EmbeddingStore store;
 
     @BeforeAll
     static void initDb() {
@@ -41,6 +42,7 @@ class ScanPipelineTest {
         criminalRepo = new CriminalRepository(jdbi);
         photoRepo = new CriminalPhotoRepository(jdbi);
         embeddingRepo = new FaceEmbeddingRepository(jdbi);
+        store = new EmbeddingStore(embeddingRepo);
     }
 
     @AfterAll
@@ -110,7 +112,7 @@ class ScanPipelineTest {
         BufferedImage img = createFaceImage();
 
         FaceEmbeddingService embeddingService = new FaceEmbeddingService(
-                FaceDetectionService.getInstance(), embeddingRepo, photoRepo);
+                FaceDetectionService.getInstance(), embeddingRepo, photoRepo, store);
 
         Embedding e1 = embeddingService.extractEmbedding(img);
         Embedding e2 = embeddingService.extractEmbedding(img);
@@ -126,7 +128,7 @@ class ScanPipelineTest {
     @Test
     void differentImages_produceDifferentEmbeddings() {
         FaceEmbeddingService embeddingService = new FaceEmbeddingService(
-                FaceDetectionService.getInstance(), embeddingRepo, photoRepo);
+                FaceDetectionService.getInstance(), embeddingRepo, photoRepo, store);
 
         BufferedImage faceImg = createFaceImage();
         BufferedImage otherImg = createDifferentImage();
@@ -162,7 +164,7 @@ class ScanPipelineTest {
         assertTrue(photoId > 0);
 
         FaceEmbeddingService embeddingService = new FaceEmbeddingService(
-                FaceDetectionService.getInstance(), embeddingRepo, photoRepo);
+                FaceDetectionService.getInstance(), embeddingRepo, photoRepo, store);
 
         embeddingService.enrollCriminal(criminalId);
 
@@ -186,8 +188,10 @@ class ScanPipelineTest {
         assertEquals(FaceEmbeddingService.MODEL_ID, stored.get(0).getModelId(),
                 "Stored embedding must carry active model id");
 
-        FaceMatchingService matchingService = new FaceMatchingService(embeddingRepo, criminalRepo);
-        matchingService.refreshCache();
+        // Make sure store reflects the just-inserted embedding (the fallback path
+        // above inserted directly via the repo, bypassing the store).
+        store.reloadFromDatabase();
+        FaceMatchingService matchingService = new FaceMatchingService(store, criminalRepo);
 
         Embedding scanEmbedding = embeddingService.extractEmbedding(faceImg);
         List<MatchResult> matches = matchingService.findMatches(scanEmbedding);
