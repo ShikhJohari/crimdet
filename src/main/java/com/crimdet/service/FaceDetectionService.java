@@ -26,7 +26,7 @@ import java.util.List;
 import static org.bytedeco.opencv.global.opencv_dnn.*;
 import static org.bytedeco.opencv.global.opencv_imgproc.*;
 
-public class FaceDetectionService {
+final class FaceDetectionService {
 
     private static final Logger log = LoggerFactory.getLogger(FaceDetectionService.class);
 
@@ -148,7 +148,7 @@ public class FaceDetectionService {
         }
     }
 
-    public static synchronized FaceDetectionService getInstance() {
+    static synchronized FaceDetectionService getInstance() {
         if (initError != null) {
             throw initError;
         }
@@ -163,7 +163,7 @@ public class FaceDetectionService {
         return instance;
     }
 
-    public synchronized List<DetectedFace> detectFaces(BufferedImage image) {
+    synchronized List<DetectedFace> detectFaces(BufferedImage image) {
         if (useYunet) {
             try {
                 return detectFacesYunet(image);
@@ -261,7 +261,6 @@ public class FaceDetectionService {
 
                 DetectedFace face = new DetectedFace(x, y, w, h, cropped, score);
                 face.setDetectionRow(scaledRow);
-                face.setOriginalImage(image);
                 results.add(face);
             }
 

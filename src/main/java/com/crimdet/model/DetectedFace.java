@@ -2,6 +2,13 @@ package com.crimdet.model;
 
 import java.awt.image.BufferedImage;
 
+/**
+ * Detector output: a face rectangle with its cropped image and optional 5-point landmarks.
+ *
+ * This is an internal type produced by the detection stage and consumed by the embedding
+ * stage inside {@link com.crimdet.service.FaceRecognitionPipeline}. Callers outside the
+ * pipeline work with {@link RecognizedFace} instead.
+ */
 public class DetectedFace {
 
     private int x;
@@ -11,10 +18,9 @@ public class DetectedFace {
     private BufferedImage croppedFace;
     private double confidence;
 
-    // FaceDetectorYN detection row: [x, y, w, h, x_re, y_re, x_le, y_le, x_nt, y_nt, x_rcm, y_rcm, x_lcm, y_lcm, score]
+    // FaceDetectorYN detection row: [x, y, w, h, x_re, y_re, x_le, y_le, x_nt, y_nt, x_rcm, y_rcm, x_lcm, y_lcm, score].
+    // Null when the detector doesn't produce landmarks (DNN SSD, Haar).
     private float[] detectionRow;
-    // Reference to the full original image (needed for alignCrop)
-    private BufferedImage originalImage;
 
     public DetectedFace() {}
 
@@ -47,7 +53,4 @@ public class DetectedFace {
 
     public float[] getDetectionRow() { return detectionRow; }
     public void setDetectionRow(float[] detectionRow) { this.detectionRow = detectionRow; }
-
-    public BufferedImage getOriginalImage() { return originalImage; }
-    public void setOriginalImage(BufferedImage originalImage) { this.originalImage = originalImage; }
 }

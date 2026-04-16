@@ -30,12 +30,12 @@ import java.util.List;
 import static org.bytedeco.opencv.global.opencv_core.*;
 import static org.bytedeco.opencv.global.opencv_imgproc.*;
 
-public class FaceEmbeddingService {
+final class FaceEmbeddingService {
 
     private static final Logger log = LoggerFactory.getLogger(FaceEmbeddingService.class);
 
     /** Identity of the active face-recognition model. Stored alongside every embedding; used to gate migration. */
-    public static final String MODEL_ID = "sface_2021dec_int8";
+    static final String MODEL_ID = "sface_2021dec_int8";
     private static final int SFACE_DIM = 128;
 
     private final FaceDetectionService faceDetectionService;
@@ -44,7 +44,7 @@ public class FaceEmbeddingService {
     private final EmbeddingStore store;
     private final FaceRecognizerSF faceRecognizer;
 
-    public FaceEmbeddingService() {
+    FaceEmbeddingService() {
         var jdbi = DatabaseConfig.getInstance().getJdbi();
         this.faceDetectionService = FaceDetectionService.getInstance();
         this.embeddingRepo = new FaceEmbeddingRepository(jdbi);
@@ -53,10 +53,10 @@ public class FaceEmbeddingService {
         this.faceRecognizer = loadFaceRecognizer();
     }
 
-    public FaceEmbeddingService(FaceDetectionService faceDetectionService,
-                                FaceEmbeddingRepository embeddingRepo,
-                                CriminalPhotoRepository photoRepo,
-                                EmbeddingStore store) {
+    FaceEmbeddingService(FaceDetectionService faceDetectionService,
+                         FaceEmbeddingRepository embeddingRepo,
+                         CriminalPhotoRepository photoRepo,
+                         EmbeddingStore store) {
         this.faceDetectionService = faceDetectionService;
         this.embeddingRepo = embeddingRepo;
         this.photoRepo = photoRepo;
@@ -82,13 +82,15 @@ public class FaceEmbeddingService {
     }
 
     /**
-     * Extract embedding from a DetectedFace. Uses alignCrop when landmarks are available
-     * (YuNet detection), falls back to raw crop when they're not (DNN SSD / Haar).
+     * Extract embedding from a DetectedFace using the supplied source frame.
+     * Uses alignCrop with 5-point landmarks when available (YuNet), falls back to a
+     * raw crop otherwise (DNN SSD / Haar). The {@code originalFrame} must be the
+     * same image that produced the detection — pipeline callers guarantee this.
      */
-    public synchronized Embedding extractEmbedding(DetectedFace face) {
+    synchronized Embedding extractEmbedding(DetectedFace face, BufferedImage originalFrame) {
         float[] vec;
-        if (face.getDetectionRow() != null && face.getOriginalImage() != null) {
-            vec = extractAligned(face.getOriginalImage(), face.getDetectionRow());
+        if (face.getDetectionRow() != null && originalFrame != null) {
+            vec = extractAligned(originalFrame, face.getDetectionRow());
         } else {
             vec = extractFromCrop(face.getCroppedFace());
         }
@@ -99,7 +101,7 @@ public class FaceEmbeddingService {
      * Raw (unaligned) extraction. Used by tests with synthetic images and by any
      * caller that has a pre-cropped face but no 5-pt landmarks.
      */
-    public synchronized Embedding extractEmbedding(BufferedImage faceImage) {
+    synchronized Embedding extractEmbedding(BufferedImage faceImage) {
         return new Embedding(extractFromCrop(faceImage), MODEL_ID);
     }
 
@@ -189,7 +191,7 @@ public class FaceEmbeddingService {
         }
     }
 
-    public void enrollCriminal(long criminalId) {
+    void enrollCriminal(long criminalId) {
         embeddingRepo.deleteByCriminalId(criminalId);
 
         List<CriminalPhoto> photos = photoRepo.findByCriminalId(criminalId);
@@ -210,7 +212,7 @@ public class FaceEmbeddingService {
                 }
 
                 DetectedFace face = faces.get(0);
-                Embedding emb = extractEmbedding(face);
+                Embedding emb = extractEmbedding(face, image);
 
                 FaceEmbedding fe = new FaceEmbedding();
                 fe.setCriminalId(criminalId);
@@ -233,7 +235,7 @@ public class FaceEmbeddingService {
      * Re-enrolls all criminals iff stored embeddings are tagged with a model_id
      * that differs from the currently active {@link #MODEL_ID}. No-op otherwise.
      */
-    public void migrateEmbeddingsIfNeeded() {
+    void migrateEmbeddingsIfNeeded() {
         var firstEmbedding = embeddingRepo.findFirst();
         if (firstEmbedding.isEmpty()) {
             log.info("No embeddings found, skipping migration");

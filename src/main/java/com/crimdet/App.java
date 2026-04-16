@@ -3,7 +3,7 @@ package com.crimdet;
 import atlantafx.base.theme.NordDark;
 import com.crimdet.config.DatabaseConfig;
 import com.crimdet.service.EmbeddingStore;
-import com.crimdet.service.FaceEmbeddingService;
+import com.crimdet.service.FaceRecognitionPipeline;
 import com.crimdet.service.WebcamService;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -24,10 +24,10 @@ public class App extends Application {
         // Initialize database
         DatabaseConfig.getInstance();
 
-        // Migrate stale embeddings (model_id mismatch) before UI loads.
-        // The service constructor lazy-initializes EmbeddingStore; we then force an
-        // explicit reload so the singleton reflects the post-migration DB state.
-        new FaceEmbeddingService().migrateEmbeddingsIfNeeded();
+        // Migrate stale embeddings (model_id mismatch) before UI loads. Pipeline
+        // construction lazy-initializes EmbeddingStore; we then force an explicit
+        // reload so the singleton reflects the post-migration DB state.
+        FaceRecognitionPipeline.getInstance().migrateEmbeddingsIfNeeded();
         EmbeddingStore.getInstance().reloadFromDatabase();
 
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/main.fxml"));

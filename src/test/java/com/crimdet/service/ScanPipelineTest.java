@@ -98,13 +98,21 @@ class ScanPipelineTest {
     }
 
     @Test
-    void faceDetectionDoesNotHangOrCrash() {
+    void pipelineProcessDoesNotHangOrCrash() {
         BufferedImage img = createFaceImage();
+        FaceRecognitionPipeline pipeline = buildPipeline();
 
-        List<DetectedFace> faces = FaceDetectionService.getInstance().detectFaces(img);
+        List<RecognizedFace> results = pipeline.process(img);
 
-        assertNotNull(faces, "detectFaces should not return null");
-        System.out.println("Detected " + faces.size() + " face(s)");
+        assertNotNull(results, "process should not return null");
+        System.out.println("Pipeline produced " + results.size() + " result(s)");
+    }
+
+    private FaceRecognitionPipeline buildPipeline() {
+        FaceEmbeddingService emb = new FaceEmbeddingService(
+                FaceDetectionService.getInstance(), embeddingRepo, photoRepo, store);
+        FaceMatchingService match = new FaceMatchingService(store, criminalRepo);
+        return new FaceRecognitionPipeline(FaceDetectionService.getInstance(), emb, match);
     }
 
     @Test

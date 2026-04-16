@@ -3,10 +3,8 @@ package com.crimdet.controller;
 import com.crimdet.model.Criminal;
 import com.crimdet.model.CriminalPhoto;
 import com.crimdet.model.CriminalStatus;
-import com.crimdet.model.DetectedFace;
 import com.crimdet.service.CriminalService;
-import com.crimdet.service.FaceDetectionService;
-import com.crimdet.service.FaceEmbeddingService;
+import com.crimdet.service.FaceRecognitionPipeline;
 import com.crimdet.util.ImageUtils;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -21,9 +19,6 @@ import org.kordamp.ikonli.javafx.FontIcon;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -123,17 +118,9 @@ public class CriminalFormController {
     private void runFaceDetection(byte[] photoData) {
         Thread thread = new Thread(() -> {
             try {
-                BufferedImage img = ImageIO.read(new ByteArrayInputStream(photoData));
-                if (img == null) {
-                    Platform.runLater(() -> {
-                        faceValidation.put(photoData, false);
-                        refreshPhotoGrid();
-                    });
-                    return;
-                }
-                List<DetectedFace> faces = FaceDetectionService.getInstance().detectFaces(img);
-                boolean valid = faces.size() == 1;
-                log.info("Face detection: {} face(s) found, valid={}", faces.size(), valid);
+                int count = FaceRecognitionPipeline.getInstance().countFaces(photoData);
+                boolean valid = count == 1;
+                log.info("Face detection: {} face(s) found, valid={}", count, valid);
                 Platform.runLater(() -> {
                     faceValidation.put(photoData, valid);
                     refreshPhotoGrid();
@@ -208,7 +195,7 @@ public class CriminalFormController {
             try {
                 // Enrollment publishes into EmbeddingStore, so all live readers
                 // (webcam, image scan) see the new criminal on their next snapshot.
-                new FaceEmbeddingService().enrollCriminal(criminalId);
+                FaceRecognitionPipeline.getInstance().enrollCriminal(criminalId);
                 log.info("Embedding enrollment complete for criminal id={}", criminalId);
             } catch (Throwable t) {
                 log.error("Embedding enrollment failed for criminal id={}", criminalId, t);
