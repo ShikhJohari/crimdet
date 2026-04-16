@@ -14,7 +14,7 @@ import java.util.*;
  * every call, so new enrollments and deletions are visible immediately without
  * any manual refresh step.
  */
-public class FaceMatchingService {
+final class FaceMatchingService {
 
     // SFace model author recommended cosine threshold (see sface.py in opencv_zoo)
     private static final double DEFAULT_THRESHOLD = 0.363;
@@ -22,18 +22,18 @@ public class FaceMatchingService {
     private final EmbeddingStore store;
     private final CriminalRepository criminalRepo;
 
-    public FaceMatchingService() {
+    FaceMatchingService() {
         var jdbi = DatabaseConfig.getInstance().getJdbi();
         this.store = EmbeddingStore.getInstance();
         this.criminalRepo = new CriminalRepository(jdbi);
     }
 
-    public FaceMatchingService(EmbeddingStore store, CriminalRepository criminalRepo) {
+    FaceMatchingService(EmbeddingStore store, CriminalRepository criminalRepo) {
         this.store = store;
         this.criminalRepo = criminalRepo;
     }
 
-    public List<MatchResult> findMatches(Embedding query, double threshold) {
+    List<MatchResult> findMatches(Embedding query, double threshold) {
         List<MatchResult> matches = new ArrayList<>();
 
         for (CriminalEmbeddings ce : store.snapshot()) {
@@ -57,7 +57,7 @@ public class FaceMatchingService {
         return matches;
     }
 
-    public List<MatchResult> findMatches(Embedding query) {
+    List<MatchResult> findMatches(Embedding query) {
         return findMatches(query, DEFAULT_THRESHOLD);
     }
 }

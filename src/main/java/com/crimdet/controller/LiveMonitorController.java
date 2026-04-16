@@ -4,9 +4,7 @@ import com.crimdet.config.DatabaseConfig;
 import com.crimdet.model.*;
 import com.crimdet.repository.DetectionLogRepository;
 import com.crimdet.service.CriminalService;
-import com.crimdet.service.FaceDetectionService;
-import com.crimdet.service.FaceEmbeddingService;
-import com.crimdet.service.FaceMatchingService;
+import com.crimdet.service.FaceRecognitionPipeline;
 import com.crimdet.service.WebcamService;
 import com.crimdet.util.ImageUtils;
 import javafx.application.Platform;
@@ -69,8 +67,7 @@ public class LiveMonitorController {
     private byte[] currentImageBytes;
 
     private CriminalService criminalService;
-    private FaceEmbeddingService embeddingService;
-    private FaceMatchingService matchingService;
+    private FaceRecognitionPipeline pipeline;
     private DetectionLogRepository detectionLogRepo;
 
     // Webcam fields
@@ -86,15 +83,14 @@ public class LiveMonitorController {
     private MonitorMode mode = MonitorMode.IDLE;
 
     // Store scan results for overlay drawing
-    private List<FaceResult> lastResults = new ArrayList<>();
+    private List<RecognizedFace> lastResults = new ArrayList<>();
     private volatile Thread activeScanThread;
     private boolean drawScheduled = false;
 
     private void ensureServicesInitialized() {
         if (criminalService == null) {
             criminalService = new CriminalService();
-            embeddingService = new FaceEmbeddingService();
-            matchingService = new FaceMatchingService();
+            pipeline = FaceRecognitionPipeline.getInstance();
             detectionLogRepo = new DetectionLogRepository(DatabaseConfig.getInstance().getJdbi());
         }
     }
@@ -232,23 +228,13 @@ public class LiveMonitorController {
             if (frame == null) return;
 
             long startMs = System.currentTimeMillis();
-            List<DetectedFace> faces = FaceDetectionService.getInstance().detectFaces(frame);
-            List<FaceResult> results = new ArrayList<>();
+            List<RecognizedFace> results = pipeline.process(frame);
             int matchCount = 0;
 
-            for (DetectedFace face : faces) {
-                Embedding embedding = embeddingService.extractEmbedding(face);
-                // Null out originalImage to free 1080p frame memory
-                face.setOriginalImage(null);
-
-                List<MatchResult> matches = matchingService.findMatches(embedding);
-                if (!matches.isEmpty()) {
-                    MatchResult best = matches.get(0);
-                    results.add(new FaceResult(face, best));
+            for (RecognizedFace r : results) {
+                if (r.match().isPresent()) {
                     matchCount++;
-                    logMatchWithDeduplication(best, face);
-                } else {
-                    results.add(new FaceResult(face, null));
+                    logMatchWithDeduplication(r.match().get(), r);
                 }
             }
 
@@ -256,13 +242,13 @@ public class LiveMonitorController {
             double fps = durationMs > 0 ? 1000.0 / durationMs : 0;
 
             final var finalResults = results;
-            final int faceCount = faces.size();
+            final int faceCount = results.size();
             final int finalMatchCount = matchCount;
 
             // Only rebuild cards if match set changed
             Set<Long> currentMatchIds = results.stream()
-                    .filter(r -> r.match() != null)
-                    .map(r -> r.match().getCriminalId())
+                    .filter(r -> r.match().isPresent())
+                    .map(r -> r.match().get().getCriminalId())
                     .collect(Collectors.toSet());
             boolean cardsChanged = !currentMatchIds.equals(previousMatchIds);
             previousMatchIds = currentMatchIds;
@@ -281,7 +267,7 @@ public class LiveMonitorController {
         }
     }
 
-    private void logMatchWithDeduplication(MatchResult match, DetectedFace face) {
+    private void logMatchWithDeduplication(MatchResult match, RecognizedFace face) {
         long criminalId = match.getCriminalId();
         Instant now = Instant.now();
         Instant lastLogged = matchCooldowns.get(criminalId);
@@ -293,7 +279,7 @@ public class LiveMonitorController {
             DetectionLog dl = new DetectionLog();
             dl.setCriminalId(criminalId);
             dl.setConfidence(match.getConfidence());
-            dl.setScreenshot(ImageUtils.toBytes(face.getCroppedFace(), "png"));
+            dl.setScreenshot(ImageUtils.toBytes(face.croppedFace(), "png"));
             dl.setNotes("Webcam live detection: " + match.getCriminalName());
             detectionLogRepo.insert(dl);
         } catch (Exception e) {
@@ -439,38 +425,25 @@ public class LiveMonitorController {
             try {
                 if (Thread.interrupted()) return;
 
-                List<DetectedFace> faces = FaceDetectionService.getInstance().detectFaces(imageToScan);
+                List<RecognizedFace> results = pipeline.process(imageToScan);
                 if (Thread.interrupted()) return;
 
-                List<FaceResult> results = new ArrayList<>();
                 int matchCount = 0;
-
-                for (DetectedFace face : faces) {
-                    if (Thread.interrupted()) return;
-
-                    Embedding embedding = embeddingService.extractEmbedding(face);
-                    if (Thread.interrupted()) return;
-
-                    List<MatchResult> matches = matchingService.findMatches(embedding);
-
-                    if (!matches.isEmpty()) {
-                        MatchResult best = matches.get(0);
-                        results.add(new FaceResult(face, best));
+                for (RecognizedFace r : results) {
+                    if (r.match().isPresent()) {
+                        MatchResult best = r.match().get();
                         matchCount++;
-
                         DetectionLog dl = new DetectionLog();
                         dl.setCriminalId(best.getCriminalId());
                         dl.setConfidence(best.getConfidence());
-                        dl.setScreenshot(ImageUtils.toBytes(face.getCroppedFace(), "png"));
+                        dl.setScreenshot(ImageUtils.toBytes(r.croppedFace(), "png"));
                         dl.setNotes("Image scan match: " + best.getCriminalName());
                         detectionLogRepo.insert(dl);
-                    } else {
-                        results.add(new FaceResult(face, null));
                     }
                 }
 
-                final List<FaceResult> finalResults = results;
-                final int faceCount = faces.size();
+                final List<RecognizedFace> finalResults = results;
+                final int faceCount = results.size();
                 final int finalMatchCount = matchCount;
 
                 Platform.runLater(() -> {
@@ -552,20 +525,20 @@ public class LiveMonitorController {
         gc.setLineWidth(2.5);
         gc.setFont(Font.font("System", FontWeight.BOLD, 13));
 
-        for (FaceResult fr : lastResults) {
-            DetectedFace face = fr.face;
-            double x = offsetX + face.getX() * scale;
-            double y = offsetY + face.getY() * scale;
-            double w = face.getWidth() * scale;
-            double h = face.getHeight() * scale;
+        for (RecognizedFace fr : lastResults) {
+            double x = offsetX + fr.x() * scale;
+            double y = offsetY + fr.y() * scale;
+            double w = fr.width() * scale;
+            double h = fr.height() * scale;
 
-            if (fr.match != null) {
+            if (fr.match().isPresent()) {
+                MatchResult m = fr.match().get();
                 // Matched: red
                 gc.setStroke(Color.RED);
                 gc.strokeRect(x, y, w, h);
 
-                String label = fr.match.getCriminalName() + " "
-                        + String.format("%.0f%%", fr.match.getConfidence() * 100);
+                String label = m.getCriminalName() + " "
+                        + String.format("%.0f%%", m.getConfidence() * 100);
                 gc.setFill(Color.rgb(200, 0, 0, 0.7));
                 gc.fillRect(x, y - 20, gc.getFont().getSize() * label.length() * 0.6 + 8, 20);
                 gc.setFill(Color.WHITE);
@@ -591,12 +564,12 @@ public class LiveMonitorController {
 
     // ── Result cards ────────────────────────────────────────────
 
-    private void buildResultCards(List<FaceResult> results) {
+    private void buildResultCards(List<RecognizedFace> results) {
         resultsBox.getChildren().clear();
 
         // Filter to only matched faces
-        List<FaceResult> matched = results.stream()
-                .filter(r -> r.match != null).toList();
+        List<RecognizedFace> matched = results.stream()
+                .filter(r -> r.match().isPresent()).toList();
 
         if (matched.isEmpty()) {
             Label noMatch = new Label(results.isEmpty()
@@ -609,14 +582,14 @@ public class LiveMonitorController {
             return;
         }
 
-        for (FaceResult fr : matched) {
+        for (RecognizedFace fr : matched) {
             VBox card = createMatchCard(fr);
             resultsBox.getChildren().add(card);
         }
     }
 
-    private VBox createMatchCard(FaceResult fr) {
-        MatchResult match = fr.match;
+    private VBox createMatchCard(RecognizedFace fr) {
+        MatchResult match = fr.match().orElseThrow();
 
         VBox card = new VBox(8);
         card.getStyleClass().add("match-card");
@@ -748,6 +721,4 @@ public class LiveMonitorController {
                 (int) (c.getBlue() * 255));
     }
 
-    /** Pairs a detected face with its optional match result. */
-    private record FaceResult(DetectedFace face, MatchResult match) {}
 }
