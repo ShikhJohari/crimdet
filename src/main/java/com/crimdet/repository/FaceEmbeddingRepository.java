@@ -18,6 +18,7 @@ public class FaceEmbeddingRepository {
         e.setCriminalId(rs.getLong("criminal_id"));
         long photoId = rs.getLong("photo_id");
         e.setPhotoId(rs.wasNull() ? null : photoId);
+        e.setModelId(rs.getString("model_id"));
         e.setEmbedding(rs.getBytes("embedding"));
         e.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
         return e;
@@ -29,9 +30,11 @@ public class FaceEmbeddingRepository {
 
     public long insert(FaceEmbedding embedding) {
         return jdbi.withHandle(handle ->
-                handle.createUpdate("INSERT INTO face_embeddings (criminal_id, photo_id, embedding) VALUES (:criminalId, :photoId, :embedding)")
+                handle.createUpdate("INSERT INTO face_embeddings (criminal_id, photo_id, model_id, embedding) " +
+                                "VALUES (:criminalId, :photoId, :modelId, :embedding)")
                         .bind("criminalId", embedding.getCriminalId())
                         .bindBySqlType("photoId", embedding.getPhotoId(), Types.BIGINT)
+                        .bind("modelId", embedding.getModelId())
                         .bind("embedding", embedding.getEmbedding())
                         .executeAndReturnGeneratedKeys("id")
                         .mapTo(Long.class)
