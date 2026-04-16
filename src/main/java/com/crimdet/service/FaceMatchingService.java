@@ -2,11 +2,11 @@ package com.crimdet.service;
 
 import com.crimdet.config.DatabaseConfig;
 import com.crimdet.model.Criminal;
+import com.crimdet.model.Embedding;
 import com.crimdet.model.FaceEmbedding;
 import com.crimdet.model.MatchResult;
 import com.crimdet.repository.CriminalRepository;
 import com.crimdet.repository.FaceEmbeddingRepository;
-import com.crimdet.util.EmbeddingUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,7 +20,7 @@ public class FaceMatchingService {
 
     private final FaceEmbeddingRepository embeddingRepo;
     private final CriminalRepository criminalRepo;
-    private final Map<Long, List<float[]>> embeddingCache = new HashMap<>();
+    private final Map<Long, List<Embedding>> embeddingCache = new HashMap<>();
 
     public FaceMatchingService() {
         var jdbi = DatabaseConfig.getInstance().getJdbi();
@@ -37,25 +37,25 @@ public class FaceMatchingService {
         embeddingCache.clear();
         List<FaceEmbedding> all = embeddingRepo.findAll();
         for (FaceEmbedding fe : all) {
-            float[] vec = EmbeddingUtils.toFloats(fe.getEmbedding());
-            embeddingCache.computeIfAbsent(fe.getCriminalId(), k -> new ArrayList<>()).add(vec);
+            Embedding emb = Embedding.fromBytes(fe.getEmbedding(), fe.getModelId());
+            embeddingCache.computeIfAbsent(fe.getCriminalId(), k -> new ArrayList<>()).add(emb);
         }
         log.info("Embedding cache refreshed: {} criminals, {} embeddings",
                 embeddingCache.size(), all.size());
     }
 
-    public synchronized List<MatchResult> findMatches(float[] queryEmbedding, double threshold) {
+    public synchronized List<MatchResult> findMatches(Embedding query, double threshold) {
         List<MatchResult> matches = new ArrayList<>();
 
-        for (Map.Entry<Long, List<float[]>> entry : embeddingCache.entrySet()) {
+        for (Map.Entry<Long, List<Embedding>> entry : embeddingCache.entrySet()) {
             long criminalId = entry.getKey();
-            List<float[]> embeddings = entry.getValue();
+            List<Embedding> stored = entry.getValue();
 
-            // Use max similarity across all embeddings for this criminal
-            double maxSim = 0.0;
-            for (float[] stored : embeddings) {
-                double sim = EmbeddingUtils.cosineSimilarity(queryEmbedding, stored);
-                maxSim = Math.max(maxSim, sim);
+            double maxSim = Double.NEGATIVE_INFINITY;
+            for (Embedding s : stored) {
+                // Embedding.cosineSimilarity throws on model mismatch — that's the intended signal.
+                double sim = query.cosineSimilarity(s);
+                if (sim > maxSim) maxSim = sim;
             }
 
             if (maxSim >= threshold) {
@@ -67,12 +67,11 @@ public class FaceMatchingService {
             }
         }
 
-        // Sort by confidence descending
         matches.sort(Comparator.comparingDouble(MatchResult::getConfidence).reversed());
         return matches;
     }
 
-    public List<MatchResult> findMatches(float[] queryEmbedding) {
-        return findMatches(queryEmbedding, DEFAULT_THRESHOLD);
+    public List<MatchResult> findMatches(Embedding query) {
+        return findMatches(query, DEFAULT_THRESHOLD);
     }
 }

@@ -239,7 +239,7 @@ public class LiveMonitorController {
             int matchCount = 0;
 
             for (DetectedFace face : faces) {
-                float[] embedding = embeddingService.extractEmbedding(face);
+                Embedding embedding = embeddingService.extractEmbedding(face);
                 // Null out originalImage to free 1080p frame memory
                 face.setOriginalImage(null);
 
@@ -451,7 +451,7 @@ public class LiveMonitorController {
                 for (DetectedFace face : faces) {
                     if (Thread.interrupted()) return;
 
-                    float[] embedding = embeddingService.extractEmbedding(face);
+                    Embedding embedding = embeddingService.extractEmbedding(face);
                     if (Thread.interrupted()) return;
 
                     List<MatchResult> matches = matchingService.findMatches(embedding);

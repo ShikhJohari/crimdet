@@ -5,7 +5,6 @@ import com.crimdet.model.*;
 import com.crimdet.repository.CriminalPhotoRepository;
 import com.crimdet.repository.CriminalRepository;
 import com.crimdet.repository.FaceEmbeddingRepository;
-import com.crimdet.util.EmbeddingUtils;
 import org.junit.jupiter.api.*;
 
 import javax.imageio.ImageIO;
@@ -59,19 +58,15 @@ class ScanPipelineTest {
         g.setColor(Color.WHITE);
         g.fillRect(0, 0, size, size);
 
-        // Skin-colored face oval
         g.setColor(new Color(210, 180, 140));
         g.fillOval(75, 50, 150, 200);
 
-        // Eyes
         g.setColor(Color.BLACK);
         g.fillOval(115, 120, 20, 15);
         g.fillOval(165, 120, 20, 15);
 
-        // Nose
         g.fillOval(145, 155, 10, 20);
 
-        // Mouth
         g.setColor(new Color(180, 80, 80));
         g.fillOval(125, 195, 50, 15);
 
@@ -83,11 +78,8 @@ class ScanPipelineTest {
     private BufferedImage createDifferentImage() {
         int size = 300;
         BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
-        // Fill with horizontal stripes of varying colors — pixel-level manipulation
-        // ensures maximum visual difference from the face oval image
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
-                // Rotating RGB channels based on position creates a non-face pattern
                 int r = (x * 17 + y * 31) % 256;
                 int g = (x * 59 + y * 7) % 256;
                 int b = (x * 43 + y * 13) % 256;
@@ -107,7 +99,6 @@ class ScanPipelineTest {
     void faceDetectionDoesNotHangOrCrash() {
         BufferedImage img = createFaceImage();
 
-        // DNN may return 0 faces for synthetic images — that's fine
         List<DetectedFace> faces = FaceDetectionService.getInstance().detectFaces(img);
 
         assertNotNull(faces, "detectFaces should not return null");
@@ -121,14 +112,13 @@ class ScanPipelineTest {
         FaceEmbeddingService embeddingService = new FaceEmbeddingService(
                 FaceDetectionService.getInstance(), embeddingRepo, photoRepo);
 
-        float[] embedding1 = embeddingService.extractEmbedding(img);
-        float[] embedding2 = embeddingService.extractEmbedding(img);
+        Embedding e1 = embeddingService.extractEmbedding(img);
+        Embedding e2 = embeddingService.extractEmbedding(img);
 
-        assertNotNull(embedding1);
-        assertEquals(128, embedding1.length);
+        assertEquals(128, e1.dimension());
+        assertEquals(FaceEmbeddingService.MODEL_ID, e1.modelId());
 
-        // Same image should produce identical embeddings
-        float sim = EmbeddingUtils.cosineSimilarity(embedding1, embedding2);
+        double sim = e1.cosineSimilarity(e2);
         System.out.println("Self-similarity: " + sim);
         assertTrue(sim > 0.99, "Same image should have near-identical embeddings, got " + sim);
     }
@@ -141,18 +131,15 @@ class ScanPipelineTest {
         BufferedImage faceImg = createFaceImage();
         BufferedImage otherImg = createDifferentImage();
 
-        float[] embedding1 = embeddingService.extractEmbedding(faceImg);
-        float[] embedding2 = embeddingService.extractEmbedding(otherImg);
+        Embedding e1 = embeddingService.extractEmbedding(faceImg);
+        Embedding e2 = embeddingService.extractEmbedding(otherImg);
 
-        assertNotNull(embedding1);
-        assertNotNull(embedding2);
-        assertEquals(128, embedding1.length);
-        assertEquals(128, embedding2.length);
+        assertEquals(128, e1.dimension());
+        assertEquals(128, e2.dimension());
 
-        float sim = EmbeddingUtils.cosineSimilarity(embedding1, embedding2);
+        double sim = e1.cosineSimilarity(e2);
         System.out.println("Cross-image similarity: " + sim);
 
-        // SFace match threshold is 0.363 — different images must be below it
         assertTrue(sim < 0.363,
                 "Different images should have similarity below SFace threshold (0.363), got " + sim);
     }
@@ -162,7 +149,6 @@ class ScanPipelineTest {
         BufferedImage faceImg = createFaceImage();
         byte[] photoBytes = toBytes(faceImg);
 
-        // Step 1: Register criminal
         Criminal c = new Criminal();
         c.setName("Test Criminal");
         c.setCrimeType("Theft");
@@ -178,8 +164,6 @@ class ScanPipelineTest {
         FaceEmbeddingService embeddingService = new FaceEmbeddingService(
                 FaceDetectionService.getInstance(), embeddingRepo, photoRepo);
 
-        // Step 2: Enroll — DNN may not detect face in synthetic image.
-        // If enrollCriminal finds 0 faces, manually insert an embedding so we can test matching.
         embeddingService.enrollCriminal(criminalId);
 
         List<FaceEmbedding> stored = embeddingRepo.findByCriminalId(criminalId);
@@ -187,23 +171,25 @@ class ScanPipelineTest {
 
         if (stored.isEmpty()) {
             // DNN didn't detect synthetic face — enroll embedding directly
-            float[] embedding = embeddingService.extractEmbedding(faceImg);
+            Embedding emb = embeddingService.extractEmbedding(faceImg);
             FaceEmbedding fe = new FaceEmbedding();
             fe.setCriminalId(criminalId);
             fe.setPhotoId(photoId);
-            fe.setEmbedding(EmbeddingUtils.toBytes(embedding));
+            fe.setModelId(emb.modelId());
+            fe.setEmbedding(emb.toBytes());
             embeddingRepo.insert(fe);
             stored = embeddingRepo.findByCriminalId(criminalId);
             System.out.println("Manually enrolled embedding (DNN skipped synthetic face)");
         }
 
         assertFalse(stored.isEmpty(), "Should have at least one embedding");
+        assertEquals(FaceEmbeddingService.MODEL_ID, stored.get(0).getModelId(),
+                "Stored embedding must carry active model id");
 
-        // Step 3: Match — extract embedding from same image, find match
         FaceMatchingService matchingService = new FaceMatchingService(embeddingRepo, criminalRepo);
         matchingService.refreshCache();
 
-        float[] scanEmbedding = embeddingService.extractEmbedding(faceImg);
+        Embedding scanEmbedding = embeddingService.extractEmbedding(faceImg);
         List<MatchResult> matches = matchingService.findMatches(scanEmbedding);
         System.out.println("Matches found: " + matches.size());
         assertFalse(matches.isEmpty(), "Same face image should produce a match");

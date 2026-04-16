@@ -7,6 +7,7 @@ public class FaceEmbedding {
     private long id;
     private long criminalId;
     private Long photoId;
+    private String modelId;
     private byte[] embedding;
     private LocalDateTime createdAt;
 
@@ -20,6 +21,9 @@ public class FaceEmbedding {
 
     public Long getPhotoId() { return photoId; }
     public void setPhotoId(Long photoId) { this.photoId = photoId; }
+
+    public String getModelId() { return modelId; }
+    public void setModelId(String modelId) { this.modelId = modelId; }
 
     public byte[] getEmbedding() { return embedding; }
     public void setEmbedding(byte[] embedding) { this.embedding = embedding; }
