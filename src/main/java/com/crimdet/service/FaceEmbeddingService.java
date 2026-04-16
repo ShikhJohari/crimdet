@@ -41,6 +41,7 @@ public class FaceEmbeddingService {
     private final FaceDetectionService faceDetectionService;
     private final FaceEmbeddingRepository embeddingRepo;
     private final CriminalPhotoRepository photoRepo;
+    private final EmbeddingStore store;
     private final FaceRecognizerSF faceRecognizer;
 
     public FaceEmbeddingService() {
@@ -48,15 +49,18 @@ public class FaceEmbeddingService {
         this.faceDetectionService = FaceDetectionService.getInstance();
         this.embeddingRepo = new FaceEmbeddingRepository(jdbi);
         this.photoRepo = new CriminalPhotoRepository(jdbi);
+        this.store = EmbeddingStore.getInstance();
         this.faceRecognizer = loadFaceRecognizer();
     }
 
     public FaceEmbeddingService(FaceDetectionService faceDetectionService,
                                 FaceEmbeddingRepository embeddingRepo,
-                                CriminalPhotoRepository photoRepo) {
+                                CriminalPhotoRepository photoRepo,
+                                EmbeddingStore store) {
         this.faceDetectionService = faceDetectionService;
         this.embeddingRepo = embeddingRepo;
         this.photoRepo = photoRepo;
+        this.store = store;
         this.faceRecognizer = loadFaceRecognizer();
     }
 
@@ -221,6 +225,8 @@ public class FaceEmbeddingService {
         }
 
         log.info("Enrolled criminal id={}: {}/{} photos processed", criminalId, enrolled, photos.size());
+        // Keep the in-memory store coherent so matchers see the new vectors immediately.
+        store.reloadForCriminal(criminalId);
     }
 
     /**

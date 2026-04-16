@@ -2,6 +2,7 @@ package com.crimdet;
 
 import atlantafx.base.theme.NordDark;
 import com.crimdet.config.DatabaseConfig;
+import com.crimdet.service.EmbeddingStore;
 import com.crimdet.service.FaceEmbeddingService;
 import com.crimdet.service.WebcamService;
 import javafx.application.Application;
@@ -23,8 +24,11 @@ public class App extends Application {
         // Initialize database
         DatabaseConfig.getInstance();
 
-        // Migrate stale embeddings (wrong dimension) before UI loads
+        // Migrate stale embeddings (model_id mismatch) before UI loads.
+        // The service constructor lazy-initializes EmbeddingStore; we then force an
+        // explicit reload so the singleton reflects the post-migration DB state.
         new FaceEmbeddingService().migrateEmbeddingsIfNeeded();
+        EmbeddingStore.getInstance().reloadFromDatabase();
 
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/main.fxml"));
         Scene scene = new Scene(root, 1200, 800);

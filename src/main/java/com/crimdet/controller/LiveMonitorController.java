@@ -169,8 +169,6 @@ public class LiveMonitorController {
             return t;
         });
 
-        matchingService.refreshCache();
-
         webcamService.start(this::onCameraFrame, this::onCameraStateChanged);
     }
 
@@ -439,7 +437,6 @@ public class LiveMonitorController {
 
         Thread thread = new Thread(() -> {
             try {
-                matchingService.refreshCache();
                 if (Thread.interrupted()) return;
 
                 List<DetectedFace> faces = FaceDetectionService.getInstance().detectFaces(imageToScan);

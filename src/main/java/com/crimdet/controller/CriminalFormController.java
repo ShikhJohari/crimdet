@@ -7,7 +7,6 @@ import com.crimdet.model.DetectedFace;
 import com.crimdet.service.CriminalService;
 import com.crimdet.service.FaceDetectionService;
 import com.crimdet.service.FaceEmbeddingService;
-import com.crimdet.service.FaceMatchingService;
 import com.crimdet.util.ImageUtils;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -207,12 +206,9 @@ public class CriminalFormController {
 
         Thread enrollThread = new Thread(() -> {
             try {
-                FaceEmbeddingService embeddingService = new FaceEmbeddingService();
-                embeddingService.enrollCriminal(criminalId);
-
-                FaceMatchingService matchingService = new FaceMatchingService();
-                matchingService.refreshCache();
-
+                // Enrollment publishes into EmbeddingStore, so all live readers
+                // (webcam, image scan) see the new criminal on their next snapshot.
+                new FaceEmbeddingService().enrollCriminal(criminalId);
                 log.info("Embedding enrollment complete for criminal id={}", criminalId);
             } catch (Throwable t) {
                 log.error("Embedding enrollment failed for criminal id={}", criminalId, t);

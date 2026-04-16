@@ -2,67 +2,53 @@ package com.crimdet.service;
 
 import com.crimdet.config.DatabaseConfig;
 import com.crimdet.model.Criminal;
+import com.crimdet.model.CriminalEmbeddings;
 import com.crimdet.model.Embedding;
-import com.crimdet.model.FaceEmbedding;
 import com.crimdet.model.MatchResult;
 import com.crimdet.repository.CriminalRepository;
-import com.crimdet.repository.FaceEmbeddingRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
+/**
+ * Stateless matcher. Reads embeddings from the shared {@link EmbeddingStore} on
+ * every call, so new enrollments and deletions are visible immediately without
+ * any manual refresh step.
+ */
 public class FaceMatchingService {
 
-    private static final Logger log = LoggerFactory.getLogger(FaceMatchingService.class);
     // SFace model author recommended cosine threshold (see sface.py in opencv_zoo)
     private static final double DEFAULT_THRESHOLD = 0.363;
 
-    private final FaceEmbeddingRepository embeddingRepo;
+    private final EmbeddingStore store;
     private final CriminalRepository criminalRepo;
-    private final Map<Long, List<Embedding>> embeddingCache = new HashMap<>();
 
     public FaceMatchingService() {
         var jdbi = DatabaseConfig.getInstance().getJdbi();
-        this.embeddingRepo = new FaceEmbeddingRepository(jdbi);
+        this.store = EmbeddingStore.getInstance();
         this.criminalRepo = new CriminalRepository(jdbi);
     }
 
-    public FaceMatchingService(FaceEmbeddingRepository embeddingRepo, CriminalRepository criminalRepo) {
-        this.embeddingRepo = embeddingRepo;
+    public FaceMatchingService(EmbeddingStore store, CriminalRepository criminalRepo) {
+        this.store = store;
         this.criminalRepo = criminalRepo;
     }
 
-    public synchronized void refreshCache() {
-        embeddingCache.clear();
-        List<FaceEmbedding> all = embeddingRepo.findAll();
-        for (FaceEmbedding fe : all) {
-            Embedding emb = Embedding.fromBytes(fe.getEmbedding(), fe.getModelId());
-            embeddingCache.computeIfAbsent(fe.getCriminalId(), k -> new ArrayList<>()).add(emb);
-        }
-        log.info("Embedding cache refreshed: {} criminals, {} embeddings",
-                embeddingCache.size(), all.size());
-    }
-
-    public synchronized List<MatchResult> findMatches(Embedding query, double threshold) {
+    public List<MatchResult> findMatches(Embedding query, double threshold) {
         List<MatchResult> matches = new ArrayList<>();
 
-        for (Map.Entry<Long, List<Embedding>> entry : embeddingCache.entrySet()) {
-            long criminalId = entry.getKey();
-            List<Embedding> stored = entry.getValue();
-
+        for (CriminalEmbeddings ce : store.snapshot()) {
             double maxSim = Double.NEGATIVE_INFINITY;
-            for (Embedding s : stored) {
+            for (Embedding s : ce.embeddings()) {
                 // Embedding.cosineSimilarity throws on model mismatch — that's the intended signal.
                 double sim = query.cosineSimilarity(s);
                 if (sim > maxSim) maxSim = sim;
             }
 
             if (maxSim >= threshold) {
-                Optional<Criminal> criminal = criminalRepo.findById(criminalId);
+                Optional<Criminal> criminal = criminalRepo.findById(ce.criminalId());
                 if (criminal.isPresent()) {
                     Criminal c = criminal.get();
-                    matches.add(new MatchResult(criminalId, c.getName(), maxSim, c.getStatus()));
+                    matches.add(new MatchResult(ce.criminalId(), c.getName(), maxSim, c.getStatus()));
                 }
             }
         }
