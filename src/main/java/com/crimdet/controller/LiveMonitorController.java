@@ -5,6 +5,9 @@ import com.crimdet.model.*;
 import com.crimdet.repository.DetectionLogRepository;
 import com.crimdet.service.CriminalService;
 import com.crimdet.service.FaceRecognitionPipeline;
+import com.crimdet.service.FrameProcessor;
+import com.crimdet.service.FrameResult;
+import com.crimdet.service.FrameStats;
 import com.crimdet.service.WebcamService;
 import com.crimdet.util.ImageUtils;
 import javafx.application.Platform;
@@ -72,11 +75,9 @@ public class LiveMonitorController {
 
     // Webcam fields
     private WebcamService webcamService;
-    private ExecutorService detectionExecutor;
+    private FrameProcessor frameProcessor;
     private WritableImage webcamImage;
     private final AtomicReference<BufferedImage> displayFrame = new AtomicReference<>();
-    private final AtomicReference<BufferedImage> detectionFrame = new AtomicReference<>();
-    private volatile boolean detectionBusy = false;
     private volatile boolean renderPending = false;
     private final Map<Long, Instant> matchCooldowns = new ConcurrentHashMap<>();
     private Set<Long> previousMatchIds = new HashSet<>();
@@ -159,18 +160,14 @@ public class LiveMonitorController {
             webcamService = new WebcamService();
         }
 
-        detectionExecutor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "detection-worker");
-            t.setDaemon(true);
-            return t;
-        });
+        frameProcessor = new FrameProcessor(pipeline);
+        frameProcessor.setListener(this::onDetectionResult);
 
         webcamService.start(this::onCameraFrame, this::onCameraStateChanged);
     }
 
     private void onCameraFrame(BufferedImage frame) {
         displayFrame.set(frame);
-        detectionFrame.set(frame);
 
         // Display path (coalesced)
         if (!renderPending) {
@@ -190,10 +187,7 @@ public class LiveMonitorController {
             });
         }
 
-        // Detection path (throttled by detectionBusy)
-        if (!detectionBusy && detectionExecutor != null && !detectionExecutor.isShutdown()) {
-            detectionExecutor.submit(this::runDetectionCycle);
-        }
+        if (frameProcessor != null) frameProcessor.submit(frame);
     }
 
     private void onCameraStateChanged(WebcamService.State oldState, WebcamService.State newState, String errorMsg) {
@@ -220,51 +214,35 @@ public class LiveMonitorController {
         });
     }
 
-    private void runDetectionCycle() {
-        if (detectionBusy) return;
-        detectionBusy = true;
-        try {
-            BufferedImage frame = detectionFrame.getAndSet(null);
-            if (frame == null) return;
 
-            long startMs = System.currentTimeMillis();
-            List<RecognizedFace> results = pipeline.process(frame);
-            int matchCount = 0;
-
-            for (RecognizedFace r : results) {
-                if (r.match().isPresent()) {
-                    matchCount++;
-                    logMatchWithDeduplication(r.match().get(), r);
-                }
+    private void onDetectionResult(FrameResult result) {
+        List<RecognizedFace> results = result.faces();
+        int matchCount = 0;
+        for (RecognizedFace r : results) {
+            if (r.match().isPresent()) {
+                matchCount++;
+                logMatchWithDeduplication(r.match().get(), r);
             }
-
-            long durationMs = System.currentTimeMillis() - startMs;
-            double fps = durationMs > 0 ? 1000.0 / durationMs : 0;
-
-            final var finalResults = results;
-            final int faceCount = results.size();
-            final int finalMatchCount = matchCount;
-
-            // Only rebuild cards if match set changed
-            Set<Long> currentMatchIds = results.stream()
-                    .filter(r -> r.match().isPresent())
-                    .map(r -> r.match().get().getCriminalId())
-                    .collect(Collectors.toSet());
-            boolean cardsChanged = !currentMatchIds.equals(previousMatchIds);
-            previousMatchIds = currentMatchIds;
-
-            Platform.runLater(() -> {
-                lastResults = finalResults;
-                drawOverlay();
-                if (cardsChanged) buildResultCards(finalResults);
-                statusLabel.setText(String.format("Faces: %d | Matches: %d | Detection: %.1f fps",
-                        faceCount, finalMatchCount, fps));
-            });
-        } catch (Exception e) {
-            log.error("Detection cycle failed", e);
-        } finally {
-            detectionBusy = false;
         }
+
+        Set<Long> currentMatchIds = results.stream()
+                .filter(r -> r.match().isPresent())
+                .map(r -> r.match().get().getCriminalId())
+                .collect(Collectors.toSet());
+        boolean cardsChanged = !currentMatchIds.equals(previousMatchIds);
+        previousMatchIds = currentMatchIds;
+
+        FrameStats stats = frameProcessor != null ? frameProcessor.getStats() : new FrameStats(0, 0, 0, 0);
+        final int faceCount = results.size();
+        final int finalMatchCount = matchCount;
+
+        Platform.runLater(() -> {
+            lastResults = results;
+            drawOverlay();
+            if (cardsChanged) buildResultCards(results);
+            statusLabel.setText(String.format("Faces: %d | Matches: %d | Detection: %.1f fps (dropped %d)",
+                    faceCount, finalMatchCount, stats.fps(), stats.droppedFrames()));
+        });
     }
 
     private void logMatchWithDeduplication(MatchResult match, RecognizedFace face) {
@@ -289,15 +267,12 @@ public class LiveMonitorController {
 
     private void stopWebcam() {
         if (webcamService != null) webcamService.stop();
-        if (detectionExecutor != null) {
-            detectionExecutor.shutdownNow();
-            try { detectionExecutor.awaitTermination(2, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            detectionExecutor = null;
+        if (frameProcessor != null) {
+            frameProcessor.close();
+            frameProcessor = null;
         }
         webcamImage = null;
         displayFrame.set(null);
-        detectionFrame.set(null);
-        detectionBusy = false;
         matchCooldowns.clear();
         previousMatchIds.clear();
     }
